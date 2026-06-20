@@ -40,7 +40,14 @@ COORD_Y_INICIO_TABLA = 395.78
 TABLA_ANCHO_TOTAL = 186.3     
 TABLA_ANCHO_COL_1 = 15.0       
 TABLA_ALTO_RENGLON = 8.0       
-TABLA_TAMANO_TEXTO = 3.5       
+TABLA_TAMANO_TEXTO = 3.5
+
+# --- AJUSTES ESPECÍFICOS PARA EL NÚMERO DE DIAGRAMA ---
+COORD_X_CAJETIN_NUMERO = 509.31  # <- Tendrás que calibrar este (Eje X)
+COORD_Y_CAJETIN_NUMERO = 28.0   # <- Tendrás que calibrar este (Eje Y)
+COORD_X_CAJETIN_NUMERO_TOP = 50.7988   # NUEVO: Arriba a la izquierda (tendrás que calibrarlo)
+COORD_Y_CAJETIN_NUMERO_TOP = 419.6769  # NUEVO: Arriba a la izquierda (tendrás que calibrarlo)
+TAMANO_TEXTO_NUMERO = 4.5       # El texto del número es más grande
 
 COORD_X_CAJETIN_NOMBRE = 441.0  
 COORD_Y_CAJETIN_NOMBRE = 38  
@@ -81,6 +88,10 @@ TAMANO_TEXTO = 5
 TAMANO_TITULO = 6
 SEPARACION_TEXTO_X = 12  
 CARPETA_BLOQUES = "bloques/"
+
+# AJUSTE DE COORDENADAS PARA EL BLOQUE "CHASIS"
+OFFSET_X_CHASIS = 39.4691  # Controla el centrado horizontal del marco negro
+OFFSET_Y_CHASIS = 14.16   # Controla la separación respecto al fondo del trafo de salida
 
 # ==========================================
 #   AJUSTE MANUAL DE GLOBOS (POSICIONES X, Y)
@@ -230,6 +241,7 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
     familia_str = f" {datos['Familia']}" if datos['Familia'] else ""
     modelo_ups = f"UPS-IND-HF-{prefijo_ups}{familia_str}"
 
+    # --- 1. ENTRADA PRINCIPAL (Siempre lleva protección) ---
     if "Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí":
         eng = calcular_ingenieria_pura(kva_tot, datos["Voltaje GABCONX"], True)
         secciones.append({"num": contador, "lineas": [
@@ -245,14 +257,24 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
         contador += 1
 
     eng = calcular_ingenieria_pura(kva_u, datos["Voltaje In"], True)
-    secciones.append({"num": contador, "lineas": [
-        f"ENTRADA DE {modelo_ups}", f"VOLTAJE: {datos['Voltaje In']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE",
-        f"PROTECCIÓN = 3 X {eng['proteccion']} AMP", f"{eng['hilos_fase'] * 3}-CABLES CAL. {eng['calibre_fase']} ({eng['hilos_fase']} X FASE)",
+    
+    # Si hay Gabinete de Conexión, la entrada al UPS es intermedia (sin prot). Si es unitario, sí lleva.
+    lleva_prot_entrada_ups = not ("Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí")
+    
+    lineas_entrada_ups = [
+        f"ENTRADA DE {modelo_ups}", f"VOLTAJE: {datos['Voltaje In']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE"
+    ]
+    if lleva_prot_entrada_ups:
+        lineas_entrada_ups.append(f"PROTECCIÓN = 3 X {eng['proteccion']} AMP")
+    lineas_entrada_ups.extend([
+        f"{eng['hilos_fase'] * 3}-CABLES CAL. {eng['calibre_fase']} ({eng['hilos_fase']} X FASE)",
         f"{eng['hilos_neutro']}-CABLES CAL. {eng['calibre_neutro']} (NEUTRO)", f"{eng['hilos_tierra']}-CABLE{'S' if eng['hilos_tierra'] > 1 else ''} CAL. {eng['tierra']} (TIERRA)",
         "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
-    ]})
+    ])
+    secciones.append({"num": contador, "lineas": lineas_entrada_ups})
     contador += 1
 
+    # --- 2. EXTRAS DE ENTRADA ---
     if datos["SPV"] == "Sí":
         mapa_spv = {"50 kA": "3050", "100 kA": "3100", "200 kA": "3200", "400 kA": "3400", "530 kA": "3530"}
         secciones.append({"num": contador, "lineas": [
@@ -263,6 +285,7 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
 
     if datos["Bypass Externo"] == "Sí":
         eng = calcular_ingenieria_pura(kva_u, datos["Voltaje Out"], False)
+        # El BPE suele ser una conexión intermedia hacia la carga general
         secciones.append({"num": contador, "lineas": [
             f"GABINETE DE BYPASS EXTERNO BPE-IND-{prefijo_ups}", f"CAPACIDAD: {kva_u} KVA", f"VOLTAJE: {datos['Voltaje Out']} VCA",
             f"CORRIENTE: {eng['corriente']} AMP/FASE", f"{eng['hilos_fase'] * 3}-CABLES CAL. {eng['calibre_fase']} ({eng['hilos_fase']} X FASE)",
@@ -284,15 +307,26 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
     secciones.append({"num": contador, "lineas": [bat_title, bus_v, "PROTECCIÓN Y CABLEADO INCLUIDO"]})
     contador += 1
 
+    # --- 3. SALIDA UPS (Puede ser final o intermedia) ---
     eng = calcular_ingenieria_pura(kva_u, datos["Voltaje Out"], False)
-    secciones.append({"num": contador, "lineas": [
-        f"SALIDA DE {modelo_ups}", f"VOLTAJE: {datos['Voltaje Out']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE",
-        f"PROTECCIÓN = 3 X {eng['proteccion']} AMP", f"{eng['hilos_fase'] * 3}-CABLES CAL. {eng['calibre_fase']} ({eng['hilos_fase']} X FASE)",
+    
+    # Es salida final SOLO si no hay filtro y no hay gabinete paralelo
+    es_salida_final_ups = datos["Filtro"] == "Ninguno" and "Paralelo" not in datos["Topología"]
+    
+    lineas_salida_ups = [
+        f"SALIDA DE {modelo_ups}", f"VOLTAJE: {datos['Voltaje Out']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE"
+    ]
+    if es_salida_final_ups:
+        lineas_salida_ups.append(f"PROTECCIÓN = 3 X {eng['proteccion']} AMP")
+    lineas_salida_ups.extend([
+        f"{eng['hilos_fase'] * 3}-CABLES CAL. {eng['calibre_fase']} ({eng['hilos_fase']} X FASE)",
         f"{eng['hilos_neutro']}-CABLES CAL. {eng['calibre_neutro']} (NEUTRO)", f"{eng['hilos_tierra']}-CABLE{'S' if eng['hilos_tierra'] > 1 else ''} CAL. {eng['tierra']} (TIERRA)",
         "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
-    ]})
+    ])
+    secciones.append({"num": contador, "lineas": lineas_salida_ups})
     contador += 1
 
+    # --- 4. FILTRO DE ARMÓNICOS (Puede ser final o intermedia) ---
     if datos["Filtro"] != "Ninguno":
         modelo_filtro = obtener_modelo_filtro(datos["Filtro"], kva_u)
         secciones.append({"num": contador, "lineas": [
@@ -300,14 +334,24 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
             "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
         ]})
         contador += 1
-        secciones.append({"num": contador, "lineas": [
-            f"SALIDA {modelo_filtro}", f"VOLTAJE: {datos['Voltaje Out']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE",
-            f"PROTECCIÓN = 3 X {eng['proteccion']} AMP", f"{eng['hilos_fase'] * 3}-CABLES CAL. {eng['calibre_fase']} ({eng['hilos_fase']} X FASE)",
+        
+        # Es salida final SOLO si no hay gabinete paralelo
+        es_salida_final_filtro = "Paralelo" not in datos["Topología"]
+        
+        lineas_salida_filtro = [
+            f"SALIDA {modelo_filtro}", f"VOLTAJE: {datos['Voltaje Out']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE"
+        ]
+        if es_salida_final_filtro:
+            lineas_salida_filtro.append(f"PROTECCIÓN = 3 X {eng['proteccion']} AMP")
+        lineas_salida_filtro.extend([
+            f"{eng['hilos_fase'] * 3}-CABLES CAL. {eng['calibre_fase']} ({eng['hilos_fase']} X FASE)",
             f"{eng['hilos_neutro']}-CABLES CAL. {eng['calibre_neutro']} (NEUTRO)", f"{eng['hilos_tierra']}-CABLE{'S' if eng['hilos_tierra'] > 1 else ''} CAL. {eng['tierra']} (TIERRA)",
             "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
-        ]})
+        ])
+        secciones.append({"num": contador, "lineas": lineas_salida_filtro})
         contador += 1
 
+    # --- 5. GABINETE PARALELO (Siempre es salida final) ---
     if "Paralelo" in datos["Topología"]:
         tipo_par = "REDUNDANCIA" if "Redundante" in datos["Topología"] else "CAPACIDAD"
         secciones.append({"num": contador, "lineas": [
@@ -375,6 +419,11 @@ def generar_diagrama_dxf(datos):
     registrar_bloque(doc, "ups_industronic.dxf", "BLK_UPS")
     registrar_bloque(doc, "trafo_at.dxf", "BLK_TRAFO_AT")
     registrar_bloque(doc, "trafo_ta.dxf", "BLK_TRAFO_TA")
+    # --- NUEVOS BLOQUES PARA GABINETE UNITARIO ---
+    registrar_bloque(doc, "trafo_at_unitario.dxf", "BLK_TRAFO_AT_UNITARIO")
+    registrar_bloque(doc, "trafo_ta_unitario.dxf", "BLK_TRAFO_TA_UNITARIO")
+    registrar_bloque(doc, "chasis.dxf", "BLK_CHASIS")
+    # ---------------------------------------------
     registrar_bloque(doc, "bpe_1.dxf", "BLK_BPE_1")
     registrar_bloque(doc, "banco_plomo_ext.dxf", "BLK_BANCO_PLOMO_EXT")
     registrar_bloque(doc, "banco_plomo_int.dxf", "BLK_BANCO_PLOMO_INT")
@@ -432,9 +481,19 @@ def generar_diagrama_dxf(datos):
 
         y -= ESPACIO_BREAKER_PRINCIPAL
         if datos["Trafo Entrada"] != "Ninguno":
-            bloque_trafo = "BLK_TRAFO_AT" if "AT" in datos["Trafo Entrada"] else "BLK_TRAFO_TA"
+            # Leemos qué tipo de configuración eligió el usuario
+            gabinete_trafo = datos.get("Gabinete Doble Trafo", "Separados")
+            
+            # Si eligió un solo gabinete, usamos tus NUEVOS bloques
+            if gabinete_trafo == "Un Solo Gabinete":
+                bloque_trafo = "BLK_TRAFO_AT_UNITARIO" if "AT" in datos["Trafo Entrada"] else "BLK_TRAFO_TA_UNITARIO"
+            # Si no, usamos los bloques normales de siempre
+            else:
+                bloque_trafo = "BLK_TRAFO_AT" if "AT" in datos["Trafo Entrada"] else "BLK_TRAFO_TA"
+            
             msp.add_blockref(bloque_trafo, insert=(x_c, y))
             y -= ALTO_TRAFO_EXTERNO
+            
         y_nodo_top = y
 
     if num_ups == 1:
@@ -503,9 +562,27 @@ def generar_diagrama_dxf(datos):
             y -= ALTO_GAB_PARALELO_STD
         
     if datos["Trafo Salida"] != "Ninguno" and num_ups == 1:
-        bloque_trafo = "BLK_TRAFO_AT" if "AT" in datos["Trafo Salida"] else "BLK_TRAFO_TA"
+        # Leemos la configuración
+        gabinete_trafo = datos.get("Gabinete Doble Trafo", "Separados")
+        
+        # Decidimos el bloque
+        if gabinete_trafo == "Un Solo Gabinete":
+            bloque_trafo = "BLK_TRAFO_AT_UNITARIO" if "AT" in datos["Trafo Salida"] else "BLK_TRAFO_TA_UNITARIO"
+        else:
+            bloque_trafo = "BLK_TRAFO_AT" if "AT" in datos["Trafo Salida"] else "BLK_TRAFO_TA"
+            
         msp.add_blockref(bloque_trafo, insert=(x_c, y))
         y -= ALTO_TRAFO_EXTERNO
+
+    # === INSERCIÓN DEL CHASIS (MARCO NEGRO) ===
+    gabinete_trafo = datos.get("Gabinete Doble Trafo", "Separados")
+    if gabinete_trafo == "Un Solo Gabinete" and num_ups == 1:
+        # Ahora el bloque utiliza las variables de la cabecera para facilitar la calibración
+        coord_x_chasis = x_c + OFFSET_X_CHASIS 
+        coord_y_chasis = y + OFFSET_Y_CHASIS 
+        
+        msp.add_blockref("BLK_CHASIS", insert=(coord_x_chasis, coord_y_chasis))
+    # ==========================================
 
     if datos["Filtro"] != "Ninguno":
         bloque_filtro = "BLK_FAP" if datos["Filtro"] == "FAP" else "BLK_FAPA"
@@ -579,17 +656,23 @@ def generar_diagrama_dxf(datos):
     msp.add_line((x_tabla_base + w_c1, y_tabla_base), (x_tabla_base + w_c1, y_curr))
     msp.add_line((x_tabla_base + w_tot, y_tabla_base), (x_tabla_base + w_tot, y_curr))
 
-    # === LLENADO AUTOMÁTICO DEL CAJETÍN ===
+   # === LLENADO AUTOMÁTICO DEL CAJETÍN ===
     fecha_actual = datetime.now().strftime("%m/%y")
-    nombre_oficial = generar_nombre_base(datos)
+    nombre_oficial = generar_nombre_base(datos) # Nombre puro sin número
+    
+    # Aquí armamos el nombre completo SOLO para descargar el archivo
+    numero_diag = datos.get("Numero Diagrama", "000000")
+    nombre_completo = f"{numero_diag} {nombre_oficial}"
 
     TAMANO_IDEAL_TITULO = 2.2       
     LIMITE_CARACTERES = 40          
     factor_ajuste_titulo = 1.0      
 
+    # Evaluamos el tamaño usando SOLO el nombre oficial sin número
     if len(nombre_oficial) > LIMITE_CARACTERES:
         factor_ajuste_titulo = LIMITE_CARACTERES / len(nombre_oficial)
 
+    # Insertamos SOLO el nombre oficial en el título del plano (Letras moradas)
     t_nom = msp.add_text(nombre_oficial, height=TAMANO_IDEAL_TITULO * factor_escala * factor_ajuste_titulo)
     t_nom.set_placement((insert_x + (COORD_X_CAJETIN_NOMBRE * factor_escala), insert_y + (COORD_Y_CAJETIN_NOMBRE * factor_escala)))
     t_nom.dxf.color = 6  
@@ -618,18 +701,49 @@ def generar_diagrama_dxf(datos):
     t_f_apr.set_placement((insert_x + (COORD_X_CAJETIN_FECH_A * factor_escala), insert_y + (COORD_Y_CAJETIN_FECH_A * factor_escala)))
     t_f_apr.dxf.color = 2  
 
-    # MODIFICACIÓN PARA WEB: Solo devolvemos el documento y el nombre en lugar de guardar
-    nombre_archivo = nombre_oficial + ".dxf"
+    # Inserción del número de diagrama en rojo (Abajo a la derecha)
+    t_num = msp.add_text(numero_diag, height=TAMANO_TEXTO_NUMERO * factor_escala)
+    t_num.set_placement((insert_x + (COORD_X_CAJETIN_NUMERO * factor_escala), insert_y + (COORD_Y_CAJETIN_NUMERO * factor_escala)))
+    t_num.dxf.color = 1  
+
+    # --- NUEVO: INSERCIÓN DEL NÚMERO INVERTIDO (Arriba a la izquierda) ---
+    t_num_top = msp.add_text(numero_diag, height=TAMANO_TEXTO_NUMERO * factor_escala)
+    t_num_top.set_placement((insert_x + (COORD_X_CAJETIN_NUMERO_TOP * factor_escala), insert_y + (COORD_Y_CAJETIN_NUMERO_TOP * factor_escala)))
+    t_num_top.dxf.color = 1
+    t_num_top.dxf.rotation = 180  # ¡Este es el truco para ponerlo de cabeza!
+    # ----------------------------------------------------------------------
+
+    # MODIFICACIÓN PARA WEB: El archivo descargable lleva el nombre completo
+    nombre_archivo = nombre_completo + ".dxf"
     return doc, nombre_archivo
 
 # ==========================================
 #   INTERFAZ WEB STREAMLIT (COLORES Y FUENTE)
 # ==========================================
 st.set_page_config(page_title="Generador Industronic", layout="wide")
+
+# ==========================================
+#   ESTILOS CSS GLOBALES (Márgenes y espacios)
+# ==========================================
+st.markdown("""
+<style>
+    /* 1. Subir toda la página (Reduce el margen blanco gigante de hasta arriba) */
+    .block-container {
+        padding-top: 1.5rem !important;
+    }
+
+    /* 2. Reducir la separación entre el logo y el título principal */
+    h1 {
+        padding-top: -6rem !important;
+        margin-top: -30px !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # ==========================================
 #   LOGO CORPORATIVO EN CÓDIGO (SVG + HTML)
 # ==========================================
-logo_html = """<div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px; margin-top: -20px;">
+logo_html = """<div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px; margin-top: 20px;">
 <svg width="65" height="65" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
 <circle cx="50" cy="50" r="50" fill="#124DCC"/>
 <rect x="32" y="25" width="12" height="32" fill="white"/>
@@ -670,22 +784,42 @@ st.markdown("""
     .color-extras  { background: linear-gradient(135deg, #FF8008 0%, #FFA03A 100%); } /* Naranja Cálido */
     .color-diseno  { background: linear-gradient(135deg, #8E2DE2 0%, #4A00E0 100%); } /* Morado Creativo */
 
-    /* Estilo para el botón principal */
-    div.stButton > button {
-        background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+   /* Estilos compartidos para TODOS los botones (Generar y Descargar) */
+    div.stButton > button, div[data-testid="stDownloadButton"] > button {
         color: white !important;
         border: none;
         border-radius: 8px;
         font-family: 'Nunito', sans-serif;
         font-size: 18px;
         font-weight: 900;
-        padding: 15px;
+        padding: 15px; /* Esto los hace igual de gorditos */
         transition: 0.3s;
+        min-height: 58px; /* Forzamos la misma altura exacta */
     }
     
+    /* Color Rojo para el botón de Generar */
+    div.stButton > button {
+        background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+    }
     div.stButton > button:hover {
         transform: scale(1.02);
         box-shadow: 0 5px 15px rgba(255, 65, 108, 0.4);
+    }
+
+    /* Color Azul Elegante para el botón de Descargar */
+    div[data-testid="stDownloadButton"] > button {
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    }
+    div[data-testid="stDownloadButton"] > button:hover {
+        transform: scale(1.02);
+        box-shadow: 0 5px 20px rgba(80, 150, 255, 0.6); /* <--- Brillo azul neón activado */
+    }
+
+    /* Margen superior para alinear los tres elementos perfectamente */
+    div.stButton, div[data-testid="stDownloadButton"] {
+        margin-top: 30px;
+        z-index: 10;
+        position: relative;
     }
 /* ==========================================
        EFECTO DE OLAS EN EL FONDO (WAVE BACKGROUND)
@@ -738,8 +872,8 @@ with col1:
         
         capacidad = st.selectbox("Capacidad UPS:", CAPACIDADES_KVA)
         familia = st.selectbox("Familia UPS:", ["M1", "N1", "R1", "MR1", "Ninguna"])
-        voltaje_in = st.selectbox("Voltaje de entrada del Sistema:", TODOS_LOS_VOLTAJES)
-        voltaje_out = st.selectbox("Voltaje de salida del Sistema:", TODOS_LOS_VOLTAJES)
+        voltaje_in = st.selectbox("Voltaje de entrada del Sistema UPS:", TODOS_LOS_VOLTAJES)
+        voltaje_out = st.selectbox("Voltaje de salida del Sistema UPS:", TODOS_LOS_VOLTAJES)
 
 # --- COLUMNA 2 ---
 with col2:
@@ -756,12 +890,18 @@ with col2:
             tipo_trafo_in = st.selectbox("Tipo de transformador:", ["AT (Autotransformador)", "TA (Transformador de Aislamiento)"], key="trafo_in_secreto")
         else:
             tipo_trafo_in = "Ninguno"
-            
+
         trafo_out = st.toggle("Incluir Transformador de Salida")
         if trafo_out:
             tipo_trafo_out = st.selectbox("Tipo de transformador:", ["AT (Autotransformador)", "TA (Transformador de Aislamiento)"], key="trafo_out_secreto")
         else:
             tipo_trafo_out = "Ninguno"
+
+        # --- LÓGICA PARA DOBLE TRANSFORMADOR ---
+        gabinete_trafo = "Separados" 
+        if trafo_in and trafo_out:
+            st.info("⚡ Doble transformador detectado")
+            gabinete_trafo = st.radio("Configuración de gabinetes:", ["Gabinetes Separados", "Un Solo Gabinete"])
 
 # --- COLUMNA 3 ---
 with col3:
@@ -798,6 +938,9 @@ with col4:
     with st.container(border=True):
         st.markdown('<div class="tarjeta-base color-diseno">✍️ Diseño y Revisión</div>', unsafe_allow_html=True)
         
+        # --- NUEVO INPUT PARA EL NÚMERO ---
+        numero_diagrama = st.text_input("No. de Diagrama:", value="000000", max_chars=6)
+        
         dibujo = st.selectbox("Dibujó:", ["AACR", "YGHG", "JCTF", "IMC", "Nuevo..."])
         if dibujo == "Nuevo...":
             dibujo = st.text_input("Ingresa iniciales (Ej. ABC):", key="nuevo_dibujo")
@@ -808,52 +951,75 @@ with col4:
 
 st.divider()
 
-if st.button("GENERAR PLANO CAD", type="primary", use_container_width=True, key="btn_generar_principal"):
-    
-    # Empaquetamos los datos en el diccionario que tu función espera
-    datos = {
-        "Capacidad": capacidad, 
-        "Familia": familia if familia != "Ninguna" else "",
-        "Voltaje In": voltaje_in, 
-        "Trafo Entrada": tipo_trafo_in,
-        "Voltaje Out": voltaje_out, 
-        "Trafo Salida": tipo_trafo_out,
-        "Topología": topologia, 
-        "Cantidad UPS": cantidad_ups,
-        "GABCONX": "Sí" if gabconx else "No", 
-        "Voltaje GABCONX": voltaje_gabconx,
-        "Voltaje GABPAR": voltaje_gabpar,
-        "Bypass Externo": "Sí" if bpe and "Paralelo" not in topologia else "No",
-        "Tipo Batería": bat_tipo, 
-        "Ubicación Batería": bat_ubi,
-        "SPV": "Sí" if spv else "No", 
-        "Capacidad SPV": cap_spv, 
-        "Filtro": filtro,
-        "Dibujó": dibujo, 
-        "Revisó": reviso
-    }
-    
+# 1. Armamos los datos SIEMPRE, para poder usarlos en la vista previa
+datos = {
+    "Capacidad": capacidad, 
+    "Familia": familia if familia != "Ninguna" else "",
+    "Voltaje In": voltaje_in, 
+    "Trafo Entrada": tipo_trafo_in,
+    "Voltaje Out": voltaje_out, 
+    "Trafo Salida": tipo_trafo_out,
+    "Gabinete Doble Trafo": gabinete_trafo, # <- Nueva variable agregada
+    "Topología": topologia, 
+    "Cantidad UPS": cantidad_ups,
+    "GABCONX": "Sí" if gabconx else "No", 
+    "Voltaje GABCONX": voltaje_gabconx,
+    "Voltaje GABPAR": voltaje_gabpar,
+    "Bypass Externo": "Sí" if bpe and "Paralelo" not in topologia else "No",
+    "Tipo Batería": bat_tipo, 
+    "Ubicación Batería": bat_ubi,
+    "SPV": "Sí" if spv else "No", 
+    "Capacidad SPV": cap_spv, 
+    "Filtro": filtro,
+    "Dibujó": dibujo, 
+    "Revisó": reviso,
+    "Numero Diagrama": numero_diagrama  # <- Nuestra nueva variable
+}
+
+# 2. NOMBRE DEL EQUIPO (Vista previa para copiar al Excel)
+st.markdown("### 📄 Nombre del Equipo")
+nombre_puro = generar_nombre_base(datos)
+st.code(nombre_puro, language="plaintext")
+
+# 3. CONTROLES DE GENERACIÓN (Todo en una sola línea simétrica)
+col_btn, col_msg, col_descarga = st.columns(3)
+
+with col_btn:
+    generar = st.button("GENERAR PLANO CAD", type="primary", use_container_width=True, key="btn_generar_principal")
+
+if generar:
     try:
-        # Generamos el DXF
         doc_dxf, nombre_archivo = generar_diagrama_dxf(datos)
         
-        # Lo pasamos a memoria para su descarga
         memoria_dxf = io.StringIO()
         doc_dxf.write(memoria_dxf)
         datos_descarga = memoria_dxf.getvalue()
         
-        st.success("✓ ¡Generado Exitosamente! Archivo preparado:")
-        
-        # --- AQUÍ ESTÁ EL TRUCO DEL BOTÓN DE COPIAR ---
-        # Esto crea una caja con el nombre y un icono de "Copiar" automático
-        st.code(nombre_archivo, language="plaintext")
-        
-        st.download_button(
-            label="📥 Haz clic aquí para descargar el DXF",
-            data=datos_descarga,
-            file_name=nombre_archivo,
-            mime="application/dxf",
-            use_container_width=True
-        )
+        with col_msg:
+            # Cuadro verde que clona la geometría exacta de los botones (margin-top y padding)
+            st.markdown("""
+            <div style="
+                background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+                color: white;
+                border-radius: 8px;
+                font-family: 'Nunito', sans-serif;
+                font-size: 18px;
+                font-weight: 900;
+                padding: 15px;
+                text-align: center;
+                margin-top: 30px;
+            ">
+                ✓ ¡Generado!
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with col_descarga:
+            st.download_button(
+                label="📥 Descargar el DXF",
+                data=datos_descarga,
+                file_name=nombre_archivo,
+                mime="application/dxf",
+                use_container_width=True
+            )
     except Exception as e:
-        st.error(f"Ocurrió un error al generar el plano. Detalle: {e}")    
+        st.error(f"Ocurrió un error al generar el plano. Detalle: {e}")
