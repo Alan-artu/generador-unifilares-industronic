@@ -109,7 +109,7 @@ OFFSET_GLOBO_FILTRO            = (-22, -15)
 OFFSET_GLOBO_SALIDA_FINAL      = (0, -40)   
 
 # ==========================================
-#   MOTOR DE CÁLCULO DE INGENIERÍA MEJORADO
+#   MOTOR DE CÁLCULO DE INGENIERÍA MEJORADO (SIN LÍMITES)
 # ==========================================
 def calcular_ingenieria_pura(kva_total, voltaje_str, es_entrada=False):
     v_ll = float(voltaje_str.split("/")[-1].replace("D", ""))
@@ -119,28 +119,32 @@ def calcular_ingenieria_pura(kva_total, voltaje_str, es_entrada=False):
     proteccion = math.ceil(corriente / 10) * 10 if corriente > 100 else math.ceil(corriente / 5) * 5
 
     num_conductores = 1
-    if corriente > 700:
-        num_conductores = math.ceil(corriente / 700)
-        
-    proteccion_fase_por_hilo = proteccion / num_conductores
-
     calibre_fase = "500 KCMIL"
-    for awg, amp in TABLA_FASE_NEUTRO:
-        if amp > proteccion_fase_por_hilo: 
-            calibre_fase = awg
+    while True:
+        proteccion_fase_por_hilo = proteccion / num_conductores
+        encontrado = False
+        for awg, amp in TABLA_FASE_NEUTRO:
+            if amp > proteccion_fase_por_hilo: 
+                calibre_fase = awg
+                encontrado = True
+                break
+        if encontrado:
             break
-            
-    num_conductores_tierra = 1
-    if proteccion > 4000:
-        num_conductores_tierra = math.ceil(proteccion / 4000)
-        
-    proteccion_tierra_por_hilo = proteccion / num_conductores_tierra
+        num_conductores += 1
 
+    num_conductores_tierra = 1
     calibre_tierra = "500 KCMIL"
-    for awg, amp in TABLA_TIERRA:
-        if amp > proteccion_tierra_por_hilo: 
-            calibre_tierra = awg
+    while True:
+        proteccion_tierra_por_hilo = proteccion / num_conductores_tierra
+        encontrado = False
+        for awg, amp in TABLA_TIERRA:
+            if amp > proteccion_tierra_por_hilo: 
+                calibre_tierra = awg
+                encontrado = True
+                break
+        if encontrado:
             break
+        num_conductores_tierra += 1
 
     return {
         "corriente": round(corriente, 2), 
@@ -227,10 +231,13 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
         pr_in = datos.get("PR_GABCONX_IN", eng['proteccion'])
         cf_in = datos.get("CF_GABCONX_IN", eng['calibre_fase'])
         ct_in = datos.get("CT_GABCONX_IN", eng['tierra'])
+        hf_in = datos.get("HF_GABCONX_IN", eng['hilos_fase'])
+        ht_in = datos.get("HT_GABCONX_IN", eng['hilos_tierra'])
+
         secciones.append({"num": contador, "lineas": [
             f"ENTRADA A GABINETE DE CONEXION", f"VOLTAJE: {datos['Voltaje GABCONX']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE",
-            f"PROTECCIÓN = 3 X {pr_in} AMP", f"{eng['hilos_fase'] * 3}-CABLES CAL. {cf_in} ({eng['hilos_fase']} X FASE)",
-            f"{eng['hilos_neutro']}-CABLES CAL. {cf_in} (NEUTRO)", f"{eng['hilos_tierra']}-CABLE{'S' if eng['hilos_tierra'] > 1 else ''} CAL. {ct_in} (TIERRA)",
+            f"PROTECCIÓN = 3 X {pr_in} AMP", f"{hf_in * 3}-CABLES CAL. {cf_in} ({hf_in} X FASE)",
+            f"{hf_in}-CABLES CAL. {cf_in} (NEUTRO)", f"{ht_in}-CABLE{'S' if ht_in > 1 else ''} CAL. {ct_in} (TIERRA)",
             "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
         ]})
         contador += 1
@@ -244,12 +251,14 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
     pr_in_ups = datos.get("PR_UPS_IN", eng['proteccion']) if lleva_prot_entrada_ups else eng['proteccion']
     cf_in_ups = datos.get("CF_UPS_IN", eng['calibre_fase'])
     ct_in_ups = datos.get("CT_UPS_IN", eng['tierra'])
+    hf_in_ups = datos.get("HF_UPS_IN", eng['hilos_fase'])
+    ht_in_ups = datos.get("HT_UPS_IN", eng['hilos_tierra'])
 
     lineas_entrada_ups = [f"ENTRADA DE {modelo_ups}", f"VOLTAJE: {datos['Voltaje In']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE"]
     if lleva_prot_entrada_ups: lineas_entrada_ups.append(f"PROTECCIÓN = 3 X {pr_in_ups} AMP")
     lineas_entrada_ups.extend([
-        f"{eng['hilos_fase'] * 3}-CABLES CAL. {cf_in_ups} ({eng['hilos_fase']} X FASE)",
-        f"{eng['hilos_neutro']}-CABLES CAL. {cf_in_ups} (NEUTRO)", f"{eng['hilos_tierra']}-CABLE{'S' if eng['hilos_tierra'] > 1 else ''} CAL. {ct_in_ups} (TIERRA)",
+        f"{hf_in_ups * 3}-CABLES CAL. {cf_in_ups} ({hf_in_ups} X FASE)",
+        f"{hf_in_ups}-CABLES CAL. {cf_in_ups} (NEUTRO)", f"{ht_in_ups}-CABLE{'S' if ht_in_ups > 1 else ''} CAL. {ct_in_ups} (TIERRA)",
         "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
     ])
     secciones.append({"num": contador, "lineas": lineas_entrada_ups})
@@ -290,12 +299,14 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
     pr_ups = datos.get("PR_UPS_OUT", eng['proteccion'])
     cf_ups = datos.get("CF_UPS_OUT", eng['calibre_fase'])
     ct_ups = datos.get("CT_UPS_OUT", eng['tierra'])
+    hf_ups = datos.get("HF_UPS_OUT", eng['hilos_fase'])
+    ht_ups = datos.get("HT_UPS_OUT", eng['hilos_tierra'])
 
     lineas_salida_ups = [f"SALIDA DE {modelo_ups}", f"VOLTAJE: {datos['Voltaje Out']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE"]
     if es_salida_final_ups: lineas_salida_ups.append(f"PROTECCIÓN = 3 X {pr_ups} AMP")
     lineas_salida_ups.extend([
-        f"{eng['hilos_fase'] * 3}-CABLES CAL. {cf_ups} ({eng['hilos_fase']} X FASE)",
-        f"{eng['hilos_neutro']}-CABLES CAL. {cf_ups} (NEUTRO)", f"{eng['hilos_tierra']}-CABLE{'S' if eng['hilos_tierra'] > 1 else ''} CAL. {ct_ups} (TIERRA)",
+        f"{hf_ups * 3}-CABLES CAL. {cf_ups} ({hf_ups} X FASE)",
+        f"{hf_ups}-CABLES CAL. {cf_ups} (NEUTRO)", f"{ht_ups}-CABLE{'S' if ht_ups > 1 else ''} CAL. {ct_ups} (TIERRA)",
         "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
     ])
     secciones.append({"num": contador, "lineas": lineas_salida_ups})
@@ -312,11 +323,14 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
         pr_filtro = eng['proteccion'] 
         cf_filtro = eng['calibre_fase']
         ct_filtro = eng['tierra']
+        hf_filtro = eng['hilos_fase']
+        ht_filtro = eng['hilos_tierra']
+
         lineas_salida_filtro = [f"SALIDA {modelo_filtro}", f"VOLTAJE: {datos['Voltaje Out']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE"]
         if es_salida_final_filtro: lineas_salida_filtro.append(f"PROTECCIÓN = 3 X {pr_filtro} AMP")
         lineas_salida_filtro.extend([
-            f"{eng['hilos_fase'] * 3}-CABLES CAL. {cf_filtro} ({eng['hilos_fase']} X FASE)",
-            f"{eng['hilos_neutro']}-CABLES CAL. {cf_filtro} (NEUTRO)", f"{eng['hilos_tierra']}-CABLE{'S' if eng['hilos_tierra'] > 1 else ''} CAL. {ct_filtro} (TIERRA)",
+            f"{hf_filtro * 3}-CABLES CAL. {cf_filtro} ({hf_filtro} X FASE)",
+            f"{hf_filtro}-CABLES CAL. {cf_filtro} (NEUTRO)", f"{ht_filtro}-CABLE{'S' if ht_filtro > 1 else ''} CAL. {ct_filtro} (TIERRA)",
             "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
         ])
         secciones.append({"num": contador, "lineas": lineas_salida_filtro})
@@ -332,10 +346,13 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
         pr_par = datos.get("PR_GABPAR_OUT", eng['proteccion'])
         cf_par = datos.get("CF_GABPAR_OUT", eng['calibre_fase'])
         ct_par = datos.get("CT_GABPAR_OUT", eng['tierra'])
+        hf_par = datos.get("HF_GABPAR_OUT", eng['hilos_fase'])
+        ht_par = datos.get("HT_GABPAR_OUT", eng['hilos_tierra'])
+
         secciones.append({"num": contador, "lineas": [
             f"SALIDA GABPAR-13{int(kva_tot)}", f"VOLTAJE: {datos['Voltaje GABPAR']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE",
-            f"PROTECCIÓN = 3 X {pr_par} AMP", f"{eng['hilos_fase'] * 3}-CABLES CAL. {cf_par} ({eng['hilos_fase']} X FASE)",
-            f"{eng['hilos_neutro']}-CABLES CAL. {cf_par} (NEUTRO)", f"{eng['hilos_tierra']}-CABLE{'S' if eng['hilos_tierra'] > 1 else ''} CAL. {ct_par} (TIERRA)",
+            f"PROTECCIÓN = 3 X {pr_par} AMP", f"{hf_par * 3}-CABLES CAL. {cf_par} ({hf_par} X FASE)",
+            f"{hf_par}-CABLES CAL. {cf_par} (NEUTRO)", f"{ht_par}-CABLE{'S' if ht_par > 1 else ''} CAL. {ct_par} (TIERRA)",
             "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
         ]})
         contador += 1
@@ -712,11 +729,9 @@ st.markdown("""
     div[data-baseweb="select"] > div:hover, div[data-baseweb="input"] > div:hover { border-color: #ffffff !important; box-shadow: 0 0 10px rgba(255, 255, 255, 0.4) !important; background-color: rgba(255, 255, 255, 0.05) !important; }                  
 </style>
 """, unsafe_allow_html=True)
-
 st.title("CREADOR DE DIAGRAMAS UNIFILARES")
 st.markdown("Plataforma Web para Generación Automática de Diagramas Unifilares CAD (DXF)")
 st.divider()
-
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
@@ -805,7 +820,7 @@ datos = {
 }
 
 # ==========================================================
-#   📊 SECCIÓN DE VALIDACIÓN CON NEGRO MATE (HILOS EN PARALELO EN VIVO)
+#   📊 SECCIÓN DE VALIDACIÓN CON NEGRO MATE (5 COLUMNAS Y VOLTAJES)
 # ==========================================================
 with st.container(border=True):
     st.markdown("### 📊 Resumen de Información (Ajustes de Calibres y Breakers)")
@@ -813,6 +828,9 @@ with st.container(border=True):
     kva_u_front = float(capacidad.replace(" KVA", ""))
     num_ups_front = int(cantidad_ups)
     kva_tot_front = kva_u_front * num_ups_front if topologia == "Paralelo por Capacidad" else kva_u_front
+
+    opciones_fase = [f"{calibre} (Soporta {amp}A)" for calibre, amp in TABLA_FASE_NEUTRO]
+    opciones_tierra = [f"{calibre} (Soporta {amp}A)" for calibre, amp in TABLA_TIERRA]
 
     def buscar_indice(tabla, calibre):
         try: return next(i for i, v in enumerate(tabla) if v[0] == calibre)
@@ -822,59 +840,61 @@ with st.container(border=True):
         try: return int(texto.split("Soporta ")[1].replace("A)", ""))
         except: return 0
 
+    # VARIABLE GLOBAL PARA TRACKEAR RIESGOS
+    hay_riesgo_global = False
+
+    # --- LÓGICA DE FILAS DINÁMICAS ---
     filas_resumen = []
+
     sufijo_trafo_in = f" + Trafo {tipo_trafo_in.split(' ')[0]}" if trafo_in else ""
     sufijo_trafo_out = f" + Trafo {tipo_trafo_out.split(' ')[0]}" if trafo_out else ""
     sufijo_filtro = f" + Filtro {filtro}" if filtro != "Ninguno" else ""
 
     if "Paralelo" in topologia and gabconx:
         filas_resumen.append({
-            "tipo": "in", "titulo": f"🟢 Entrada de Red Principal (GABCONX) — Voltaje: {voltaje_gabconx} VCA{sufijo_trafo_in}",
+            "tipo": "in", 
+            "titulo": f"🟢 Entrada de Red Principal (GABCONX) — Voltaje: {voltaje_gabconx} VCA{sufijo_trafo_in}",
             "eng": calcular_ingenieria_pura(kva_tot_front, voltaje_gabconx, True),
-            "pr": "PR_GABCONX_IN", "cf": "CF_GABCONX_IN", "ct": "CT_GABCONX_IN"
+            "pr": "PR_GABCONX_IN", "cf": "CF_GABCONX_IN", "ct": "CT_GABCONX_IN", "hf": "HF_GABCONX_IN", "ht": "HT_GABCONX_IN"
         })
 
     sufijo_trafo_ups_in = sufijo_trafo_in if not ("Paralelo" in topologia and gabconx) else ""
     filas_resumen.append({
-        "tipo": "in", "titulo": f"🟢 Entrada del UPS — Voltaje: {voltaje_in} VCA{sufijo_trafo_ups_in}",
+        "tipo": "in", 
+        "titulo": f"🟢 Entrada del UPS — Voltaje: {voltaje_in} VCA{sufijo_trafo_ups_in}",
         "eng": calcular_ingenieria_pura(kva_u_front, voltaje_in, True),
-        "pr": "PR_UPS_IN", "cf": "CF_UPS_IN", "ct": "CT_UPS_IN"
+        "pr": "PR_UPS_IN", "cf": "CF_UPS_IN", "ct": "CT_UPS_IN", "hf": "HF_UPS_IN", "ht": "HT_UPS_IN"
     })
 
     sufijo_extras_ups_out = ""
-    if "Paralelo" not in topologia: sufijo_extras_ups_out = sufijo_trafo_out + sufijo_filtro
+    if "Paralelo" not in topologia:
+        sufijo_extras_ups_out = sufijo_trafo_out + sufijo_filtro
     filas_resumen.append({
-        "tipo": "out", "titulo": f"🟠 Salida del UPS — Voltaje: {voltaje_out} VCA{sufijo_extras_ups_out}",
+        "tipo": "out", 
+        "titulo": f"🟠 Salida del UPS — Voltaje: {voltaje_out} VCA{sufijo_extras_ups_out}",
         "eng": calcular_ingenieria_pura(kva_u_front, voltaje_out, False),
-        "pr": "PR_UPS_OUT", "cf": "CF_UPS_OUT", "ct": "CT_UPS_OUT"
+        "pr": "PR_UPS_OUT", "cf": "CF_UPS_OUT", "ct": "CT_UPS_OUT", "hf": "HF_UPS_OUT", "ht": "HT_UPS_OUT"
     })
 
     if "Paralelo" in topologia:
         filas_resumen.append({
-            "tipo": "out", "titulo": f"🟠 Salida de Gabinete Paralelo (Carga) — Voltaje: {voltaje_gabpar} VCA{sufijo_trafo_out}{sufijo_filtro}",
+            "tipo": "out", 
+            "titulo": f"🟠 Salida de Gabinete Paralelo (Carga) — Voltaje: {voltaje_gabpar} VCA{sufijo_trafo_out}{sufijo_filtro}",
             "eng": calcular_ingenieria_pura(kva_tot_front, voltaje_gabpar, False),
-            "pr": "PR_GABPAR_OUT", "cf": "CF_GABPAR_OUT", "ct": "CT_GABPAR_OUT"
+            "pr": "PR_GABPAR_OUT", "cf": "CF_GABPAR_OUT", "ct": "CT_GABPAR_OUT", "hf": "HF_GABPAR_OUT", "ht": "HT_GABPAR_OUT"
         })
 
     firma_estado = f"{capacidad}_{voltaje_in}_{voltaje_out}_{topologia}_{cantidad_ups}_{gabconx}_{filtro}"
 
+    opciones_fase_limpias = [f"{calibre} (Soporta {amp}A)" for calibre, amp in TABLA_FASE_NEUTRO]
+    opciones_tierra_limpias = [f"{calibre} (Soporta {amp}A)" for calibre, amp in TABLA_TIERRA]
+
     for f in filas_resumen:
         st.markdown(f"**{f['titulo']}**")
-        c1, c2, c3, c4, c5 = st.columns([1.5, 1.5, 2, 2, 1])
+        
+        c1, c2, c3_h, c3_c, c4_h, c4_c, c5 = st.columns([1.1, 1.1, 0.8, 1.8, 0.8, 1.8, 1])
         
         lbl_corr = "Corriente entrada (25%)" if f['tipo'] == "in" else "Corriente de salida"
-        h_fase = f['eng']['hilos_fase']
-        h_tierra = f['eng']['hilos_tierra']
-        
-        # CREACIÓN DE LISTAS ADAPTATIVAS CON LOS HILOS REALES CALCULADOS
-        opciones_fase_dinamicas = [
-            f"{h_fase}x {calibre} (Soporta {amp * h_fase}A)" if h_fase > 1 else f"{calibre} (Soporta {amp}A)"
-            for calibre, amp in TABLA_FASE_NEUTRO
-        ]
-        opciones_tierra_dinamicas = [
-            f"{h_tierra}x {calibre} (Soporta {amp * h_tierra}A)" if h_tierra > 1 else f"{calibre} (Soporta {amp}A)"
-            for calibre, amp in TABLA_TIERRA
-        ]
         
         lleva_breaker = True
         if f['pr'] == "PR_UPS_IN" and ("Paralelo" in topologia and gabconx): lleva_breaker = False
@@ -907,14 +927,24 @@ with st.container(border=True):
         idx_f = buscar_indice(TABLA_FASE_NEUTRO, f['eng']['calibre_fase'])
         idx_t = buscar_indice(TABLA_TIERRA, f['eng']['tierra'])
         
-        with c3: sel_f = st.selectbox("Calibre Fase Neutro:", options=opciones_fase_dinamicas, index=idx_f, key=f"{f['cf']}_{firma_estado}")
-        with c4: sel_t = st.selectbox("Calibre Tierra:", options=opciones_tierra_dinamicas, index=idx_t, key=f"{f['ct']}_{firma_estado}")
+        with c3_h: 
+            sel_hf = st.number_input("Hilos F:", min_value=1, max_value=99, value=f['eng']['hilos_fase'], key=f"hf_{f['cf']}_{firma_estado}")
+        with c3_c: 
+            sel_f = st.selectbox("Calibre Fase/Neutro:", options=opciones_fase_limpias, index=idx_f, key=f"cf_{f['cf']}_{firma_estado}")
+            amp_f_base = extraer_ampacidad(sel_f)
+            capacidad_total_f = amp_f_base * sel_hf
+            st.markdown(f"<div style='font-size:13px; color:#a0aab2; margin-top:-10px; text-align:right;'>⚡ Capacidad total: <b><span style='color:white;'>{capacidad_total_f} A</span></b></div>", unsafe_allow_html=True)
+            
+        with c4_h: 
+            sel_ht = st.number_input("Hilos T:", min_value=1, max_value=99, value=f['eng']['hilos_tierra'], key=f"ht_{f['ct']}_{firma_estado}")
+        with c4_c: 
+            sel_t = st.selectbox("Calibre Tierra:", options=opciones_tierra_limpias, index=idx_t, key=f"ct_{f['ct']}_{firma_estado}")
+            amp_t_base = extraer_ampacidad(sel_t)
+            capacidad_total_t = amp_t_base * sel_ht
+            st.markdown(f"<div style='font-size:13px; color:#a0aab2; margin-top:-10px; text-align:right;'>⚡ Capacidad total: <b><span style='color:white;'>{capacidad_total_t} A</span></b></div>", unsafe_allow_html=True)
         
-        amp_f_tot = extraer_ampacidad(sel_f)
-        amp_t_tot = extraer_ampacidad(sel_t)
-        
-        cumple_f = amp_f_tot > f['eng']['proteccion']
-        cumple_t = amp_t_tot > f['eng']['proteccion']
+        cumple_f = capacidad_total_f > f['eng']['proteccion']
+        cumple_t = capacidad_total_t > f['eng']['proteccion']
         
         if cumple_f and cumple_t:
             v_icon = "✅"
@@ -924,6 +954,7 @@ with st.container(border=True):
             v_icon = "❌"
             v_color = "#ff4b2b"
             v_text = "Riesgo"
+            hay_riesgo_global = True # <--- Registramos el riesgo si aparece aunque sea una vez
             
         with c5:
             st.markdown(f"""
@@ -934,16 +965,11 @@ with st.container(border=True):
             """, unsafe_allow_html=True)
 
         datos[f['pr']] = f['eng']['proteccion'] if lleva_breaker else 0
+        datos[f['cf']] = sel_f.split(" (")[0]
+        datos[f['ct']] = sel_t.split(" (")[0]
+        datos[f['hf']] = sel_hf
+        datos[f['ht']] = sel_ht
         
-        # Limpieza de texto pura: Eliminamos hilos y ampacidades para mandar solo "500 KCMIL" a AutoCAD
-        c_fase_limpio = sel_f.split(" (")[0]
-        if "x " in c_fase_limpio: c_fase_limpio = c_fase_limpio.split("x ")[1]
-        
-        c_tierra_limpio = sel_t.split(" (")[0]
-        if "x " in c_tierra_limpio: c_tierra_limpio = c_tierra_limpio.split("x ")[1]
-
-        datos[f['cf']] = c_fase_limpio
-        datos[f['ct']] = c_tierra_limpio
         st.write("") 
 # ==========================================================
 
@@ -951,10 +977,22 @@ st.markdown("### 📄 Nombre del Equipo")
 nombre_puro = generar_nombre_base(datos)
 st.code(nombre_puro, language="plaintext")
 
+# --- LÓGICA DE BLOQUEO DE SEGURIDAD ---
+if hay_riesgo_global:
+    st.error("⚠️ **ALERTA DE SEGURIDAD:** Uno o más calibres seleccionados tienen marca de **Riesgo** (la capacidad del cable es menor o igual a la protección del Breaker).")
+    autorizar_riesgo = st.checkbox("Soy consciente del riesgo y autorizo la generación del plano bajo mi propia responsabilidad.")
+else:
+    autorizar_riesgo = True 
+
 col_btn, col_msg, col_descarga = st.columns(3)
 
 with col_btn:
-    generar = st.button("GENERAR PLANO CAD", type="primary", use_container_width=True, key="btn_generar_principal")
+    if hay_riesgo_global and not autorizar_riesgo:
+        generar = st.button("GENERAR PLANO CAD", type="primary", use_container_width=True, disabled=True)
+    elif hay_riesgo_global and autorizar_riesgo:
+        generar = st.button("GENERAR CON RIESGO", type="primary", use_container_width=True)
+    else:
+        generar = st.button("GENERAR PLANO CAD", type="primary", use_container_width=True)
 
 if generar:
     try:
