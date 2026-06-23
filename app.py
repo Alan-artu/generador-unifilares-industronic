@@ -109,7 +109,7 @@ OFFSET_GLOBO_FILTRO            = (-22, -15)
 OFFSET_GLOBO_SALIDA_FINAL      = (0, -40)   
 
 # ==========================================
-#   MOTOR DE CÁLCULO DE INGENIERÍA MEJORADO (REGLA ESTRICTA > )
+#   MOTOR DE CÁLCULO DE INGENIERÍA MEJORADO
 # ==========================================
 def calcular_ingenieria_pura(kva_total, voltaje_str, es_entrada=False):
     v_ll = float(voltaje_str.split("/")[-1].replace("D", ""))
@@ -126,7 +126,7 @@ def calcular_ingenieria_pura(kva_total, voltaje_str, es_entrada=False):
 
     calibre_fase = "500 KCMIL"
     for awg, amp in TABLA_FASE_NEUTRO:
-        if amp > proteccion_fase_por_hilo: # REGLA DE SEGURIDAD
+        if amp > proteccion_fase_por_hilo: 
             calibre_fase = awg
             break
             
@@ -138,7 +138,7 @@ def calcular_ingenieria_pura(kva_total, voltaje_str, es_entrada=False):
 
     calibre_tierra = "500 KCMIL"
     for awg, amp in TABLA_TIERRA:
-        if amp > proteccion_tierra_por_hilo: # REGLA DE SEGURIDAD
+        if amp > proteccion_tierra_por_hilo: 
             calibre_tierra = awg
             break
 
@@ -805,7 +805,7 @@ datos = {
 }
 
 # ==========================================================
-#   📊 SECCIÓN DE VALIDACIÓN CON NEGRO MATE (5 COLUMNAS Y VOLTAJES)
+#   📊 SECCIÓN DE VALIDACIÓN CON NEGRO MATE (HILOS EN PARALELO EN VIVO)
 # ==========================================================
 with st.container(border=True):
     st.markdown("### 📊 Resumen de Información (Ajustes de Calibres y Breakers)")
@@ -813,9 +813,6 @@ with st.container(border=True):
     kva_u_front = float(capacidad.replace(" KVA", ""))
     num_ups_front = int(cantidad_ups)
     kva_tot_front = kva_u_front * num_ups_front if topologia == "Paralelo por Capacidad" else kva_u_front
-
-    opciones_fase = [f"{calibre} (Soporta {amp}A)" for calibre, amp in TABLA_FASE_NEUTRO]
-    opciones_tierra = [f"{calibre} (Soporta {amp}A)" for calibre, amp in TABLA_TIERRA]
 
     def buscar_indice(tabla, calibre):
         try: return next(i for i, v in enumerate(tabla) if v[0] == calibre)
@@ -825,57 +822,59 @@ with st.container(border=True):
         try: return int(texto.split("Soporta ")[1].replace("A)", ""))
         except: return 0
 
-    # --- LÓGICA DE FILAS DINÁMICAS (CON VOLTAJES Y TRAFOS) ---
     filas_resumen = []
-
     sufijo_trafo_in = f" + Trafo {tipo_trafo_in.split(' ')[0]}" if trafo_in else ""
     sufijo_trafo_out = f" + Trafo {tipo_trafo_out.split(' ')[0]}" if trafo_out else ""
     sufijo_filtro = f" + Filtro {filtro}" if filtro != "Ninguno" else ""
 
-    # 1. GABCONX
     if "Paralelo" in topologia and gabconx:
         filas_resumen.append({
-            "tipo": "in", 
-            "titulo": f"🟢 Entrada de Red Principal (GABCONX) — Voltaje: {voltaje_gabconx} VCA{sufijo_trafo_in}",
+            "tipo": "in", "titulo": f"🟢 Entrada de Red Principal (GABCONX) — Voltaje: {voltaje_gabconx} VCA{sufijo_trafo_in}",
             "eng": calcular_ingenieria_pura(kva_tot_front, voltaje_gabconx, True),
             "pr": "PR_GABCONX_IN", "cf": "CF_GABCONX_IN", "ct": "CT_GABCONX_IN"
         })
 
-    # 2. ENTRADA UPS
     sufijo_trafo_ups_in = sufijo_trafo_in if not ("Paralelo" in topologia and gabconx) else ""
     filas_resumen.append({
-        "tipo": "in", 
-        "titulo": f"🟢 Entrada del UPS — Voltaje: {voltaje_in} VCA{sufijo_trafo_ups_in}",
+        "tipo": "in", "titulo": f"🟢 Entrada del UPS — Voltaje: {voltaje_in} VCA{sufijo_trafo_ups_in}",
         "eng": calcular_ingenieria_pura(kva_u_front, voltaje_in, True),
         "pr": "PR_UPS_IN", "cf": "CF_UPS_IN", "ct": "CT_UPS_IN"
     })
 
-    # 3. SALIDA UPS
     sufijo_extras_ups_out = ""
-    if "Paralelo" not in topologia:
-        sufijo_extras_ups_out = sufijo_trafo_out + sufijo_filtro
+    if "Paralelo" not in topologia: sufijo_extras_ups_out = sufijo_trafo_out + sufijo_filtro
     filas_resumen.append({
-        "tipo": "out", 
-        "titulo": f"🟠 Salida del UPS — Voltaje: {voltaje_out} VCA{sufijo_extras_ups_out}",
+        "tipo": "out", "titulo": f"🟠 Salida del UPS — Voltaje: {voltaje_out} VCA{sufijo_extras_ups_out}",
         "eng": calcular_ingenieria_pura(kva_u_front, voltaje_out, False),
         "pr": "PR_UPS_OUT", "cf": "CF_UPS_OUT", "ct": "CT_UPS_OUT"
     })
 
-    # 4. SALIDA GABPAR
     if "Paralelo" in topologia:
         filas_resumen.append({
-            "tipo": "out", 
-            "titulo": f"🟠 Salida de Gabinete Paralelo (Carga) — Voltaje: {voltaje_gabpar} VCA{sufijo_trafo_out}{sufijo_filtro}",
+            "tipo": "out", "titulo": f"🟠 Salida de Gabinete Paralelo (Carga) — Voltaje: {voltaje_gabpar} VCA{sufijo_trafo_out}{sufijo_filtro}",
             "eng": calcular_ingenieria_pura(kva_tot_front, voltaje_gabpar, False),
             "pr": "PR_GABPAR_OUT", "cf": "CF_GABPAR_OUT", "ct": "CT_GABPAR_OUT"
         })
 
-    # --- RENDERIZADO VISUAL ---
+    firma_estado = f"{capacidad}_{voltaje_in}_{voltaje_out}_{topologia}_{cantidad_ups}_{gabconx}_{filtro}"
+
     for f in filas_resumen:
         st.markdown(f"**{f['titulo']}**")
         c1, c2, c3, c4, c5 = st.columns([1.5, 1.5, 2, 2, 1])
         
         lbl_corr = "Corriente entrada (25%)" if f['tipo'] == "in" else "Corriente de salida"
+        h_fase = f['eng']['hilos_fase']
+        h_tierra = f['eng']['hilos_tierra']
+        
+        # CREACIÓN DE LISTAS ADAPTATIVAS CON LOS HILOS REALES CALCULADOS
+        opciones_fase_dinamicas = [
+            f"{h_fase}x {calibre} (Soporta {amp * h_fase}A)" if h_fase > 1 else f"{calibre} (Soporta {amp}A)"
+            for calibre, amp in TABLA_FASE_NEUTRO
+        ]
+        opciones_tierra_dinamicas = [
+            f"{h_tierra}x {calibre} (Soporta {amp * h_tierra}A)" if h_tierra > 1 else f"{calibre} (Soporta {amp}A)"
+            for calibre, amp in TABLA_TIERRA
+        ]
         
         lleva_breaker = True
         if f['pr'] == "PR_UPS_IN" and ("Paralelo" in topologia and gabconx): lleva_breaker = False
@@ -907,14 +906,15 @@ with st.container(border=True):
                 
         idx_f = buscar_indice(TABLA_FASE_NEUTRO, f['eng']['calibre_fase'])
         idx_t = buscar_indice(TABLA_TIERRA, f['eng']['tierra'])
-        with c3: sel_f = st.selectbox("Calibre Fase Neutro:", options=opciones_fase, index=idx_f, key=f"{f['cf']}")
-        with c4: sel_t = st.selectbox("Calibre Tierra:", options=opciones_tierra, index=idx_t, key=f"{f['ct']}")
         
-        amp_f = extraer_ampacidad(sel_f)
-        amp_t = extraer_ampacidad(sel_t)
+        with c3: sel_f = st.selectbox("Calibre Fase Neutro:", options=opciones_fase_dinamicas, index=idx_f, key=f"{f['cf']}_{firma_estado}")
+        with c4: sel_t = st.selectbox("Calibre Tierra:", options=opciones_tierra_dinamicas, index=idx_t, key=f"{f['ct']}_{firma_estado}")
         
-        cumple_f = (amp_f * f['eng']['hilos_fase']) > f['eng']['proteccion']
-        cumple_t = (amp_t * f['eng']['hilos_tierra']) > f['eng']['proteccion']
+        amp_f_tot = extraer_ampacidad(sel_f)
+        amp_t_tot = extraer_ampacidad(sel_t)
+        
+        cumple_f = amp_f_tot > f['eng']['proteccion']
+        cumple_t = amp_t_tot > f['eng']['proteccion']
         
         if cumple_f and cumple_t:
             v_icon = "✅"
@@ -934,8 +934,16 @@ with st.container(border=True):
             """, unsafe_allow_html=True)
 
         datos[f['pr']] = f['eng']['proteccion'] if lleva_breaker else 0
-        datos[f['cf']] = sel_f.split(" (")[0]
-        datos[f['ct']] = sel_t.split(" (")[0]
+        
+        # Limpieza de texto pura: Eliminamos hilos y ampacidades para mandar solo "500 KCMIL" a AutoCAD
+        c_fase_limpio = sel_f.split(" (")[0]
+        if "x " in c_fase_limpio: c_fase_limpio = c_fase_limpio.split("x ")[1]
+        
+        c_tierra_limpio = sel_t.split(" (")[0]
+        if "x " in c_tierra_limpio: c_tierra_limpio = c_tierra_limpio.split("x ")[1]
+
+        datos[f['cf']] = c_fase_limpio
+        datos[f['ct']] = c_tierra_limpio
         st.write("") 
 # ==========================================================
 
