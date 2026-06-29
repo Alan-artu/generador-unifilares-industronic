@@ -933,7 +933,7 @@ st.markdown("""
     div.stButton, div[data-testid="stDownloadButton"] { margin-top: 30px; z-index: 10; position: relative; }
     [data-testid="stAppViewContainer"] { background-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 1440 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><path fill="%231E2A45" fill-opacity="0.8" d="M0,192L48,197.3C96,203,192,213,288,229.3C384,245,480,267,576,250.7C672,235,768,181,864,181.3C960,181,1056,235,1152,234.7C1248,235,1344,181,1392,154.7L1440,128L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"></path><path fill="%23283759" fill-opacity="1" d="M0,256L48,245.3C96,235,192,213,288,213.3C384,213,480,235,576,224C672,213,768,171,864,170.7C960,171,1056,213,1152,218.7C1248,224,1344,192,1392,176L1440,160L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"></path></svg>'); background-repeat: no-repeat; background-position: bottom center; background-attachment: fixed; background-size: 100vw 35vh; }
     div[data-baseweb="select"] > div, div[data-baseweb="input"] > div { transition: all 0.3s ease !important; }
-    div[data-baseweb="select"] > div:hover, div[data-baseweb="input"] > div:hover { border-color: #ffffff !important; box-shadow: 0 0 10px rgba(255, 255, 255, 0.4) !important; background-color: rgba(255, 255, 255, 0.05) !important; }                  
+    div[data-baseweb="select"] > div:hover, div[data-baseweb="input"] > div:hover { ... (el código del borde blanco) ... }          
 </style>
 """, unsafe_allow_html=True)
 
@@ -949,10 +949,24 @@ logo_html = """<div style="display: flex; align-items: center; gap: 15px; margin
 Industronic
 </span>
 </div>"""
-st.markdown(logo_html, unsafe_allow_html=True)
-st.title("CREADOR DE DIAGRAMAS UNIFILARES")
-st.markdown("Plataforma Web para Generación Automática de Diagramas Unifilares CAD (DXF)")
+# --- INICIO DE LA CABECERA ---
+col_logo, col_titulo, col_diag = st.columns([1.5, 3.5, 1.8]) 
+
+with col_logo:
+    st.markdown(logo_html, unsafe_allow_html=True)
+
+with col_titulo:
+    # Usamos un <div> en lugar de <h1> para que el CSS global no lo esconda, y ajustamos el texto
+    st.markdown('<div style="padding-top: 20px; font-size: 2.6rem; font-weight: 800; line-height: 1.1;">CREADOR DE DIAGRAMAS UNIFILARES</div>', unsafe_allow_html=True)
+    st.markdown("Plataforma Web para Generación Automática de Diagramas Unifilares CAD (DXF)")
+
+with col_diag:
+    st.write("") 
+    # Cambiamos a use_container_width=True para quitar la caja amarilla de advertencia
+    st.image("diagrama_logo.png", use_container_width=True)
+
 st.divider()
+# --- FIN DE LA CABECERA ---
 
 col1, col2, col3, col4 = st.columns(4)
 
