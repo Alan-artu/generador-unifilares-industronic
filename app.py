@@ -75,7 +75,7 @@ ALTO_SPV = 40.00
 ALTO_FAP = 33.68 
 ESPACIO_PARALELO = 141.99 
 ALTO_GAB_CONEXION = 122.36 
-ALTO_CONEXION_DIRECTA = 25  #----------
+ALTO_CONEXION_DIRECTA = 68  #----------
 ALTO_GAB_PARALELO_STD = -59.37   
 ALTO_GAB_PARALELO_TRAFO = 0  
 SEPARACION_UPS_GABPAR = 185.28 
@@ -348,7 +348,8 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
                 "CABLEADO SUMINISTRADO POR EL USUARIO"
             ]})
             
-        secciones.append({"num": str(indices['UPS']), "lineas": [modelo_equipo, "MARCA INDUSTRONIC", f"{int(kva_u)} KVA 3 FASES", f"VN: {datos['Voltaje Out']} VCA"]})
+        # NUEVO CÓDIGO:
+        secciones.append({"num": str(indices['UPS']), "lineas": [modelo_equipo, "MARCA INDUSTRONIC", f"{int(kva_u)} KVA 3 FASES"]})
         
         eng_amcr_out = calcular_ingenieria_pura(kva_u, datos["Voltaje Out"], False, "AMCR")
         pr_amcr_out = datos.get("PR_AMCR_OUT", eng_amcr_out['proteccion'])
@@ -474,7 +475,8 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
         secciones.append({"num": str(contador), "lineas": lineas_bpe})
         contador += 1
 
-    secciones.append({"num": str(contador), "lineas": [modelo_equipo, "MARCA INDUSTRONIC", f"{kva_u} KVA {fases_txt}", f"VN: {datos['Voltaje Out']} VCA"]})
+    # NUEVO CÓDIGO:
+    secciones.append({"num": str(contador), "lineas": [modelo_equipo, "MARCA INDUSTRONIC", f"{kva_u} KVA {fases_txt}"]})
     contador += 1
 
     if datos["Tipo Batería"] != "Ninguna":
@@ -581,6 +583,44 @@ def registrar_bloque(doc, archivo_dxf, nombre_bloque):
 def generar_diagrama_dxf(datos):
     doc = ezdxf.new('R2010', setup=True)
     msp = doc.modelspace()
+
+    # --- DICCIONARIO DE NOTAS DINÁMICAS ---
+    notas_ups = [
+        "NOTAS:",
+        "1.-LOS DATOS DE CALIBRE DE CABLE PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
+        "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
+        "2.-EL NUMERO DE GABINETES DE BATERIAS PUEDE VARIAR SEGUN EL TIEMPO DE RESPALDO",
+        "   (LAS IMAGENES SON SOLO REPRESENTATIVAS).",
+        "3.-LOS CABLES DE CONEXION ENTRE EL UPS Y EL BANCO DE BATERIAS SON PROPORCIONADOS",
+        "   POR INDUSTRONIC.",
+        "4.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
+        "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
+        "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
+        "5.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MAS GRANDE, DEBERAN AJUSTARSE AL",
+        "   VALOR MAS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR."
+    ]
+
+    notas_cfr = [
+        "NOTAS:",
+        "1.-LOS DATOS DE CALIBRE DE CABLE PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
+        "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
+        "2.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
+        "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
+        "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
+        "3.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MAS GRANDE, DEBERAN AJUSTARSE AL",
+        "   VALOR MAS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR."
+    ]
+
+    notas_amcr = [
+        "NOTAS:",
+        "1.-LOS DATOS DE CALIBRE DE CABLE PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
+        "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
+        "2.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
+        "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
+        "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
+        "3.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MAS GRANDE, DEBERAN AJUSTARSE AL",
+        "   VALOR MAS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR."
+    ]
     
     es_sin_gabconx = datos["GABCONX"] == "No" and "Paralelo" in datos["Topología"]
     kva_u = float(datos["Capacidad"].replace(" KVA", ""))
@@ -864,6 +904,51 @@ def generar_diagrama_dxf(datos):
     msp.add_line((x_tabla_base + w_c1, y_tabla_base), (x_tabla_base + w_c1, y_curr))
     msp.add_line((x_tabla_base + w_tot, y_tabla_base), (x_tabla_base + w_tot, y_curr))
 
+   # --- SISTEMA INTELIGENTE DE NOTAS (CASO A y CASO B) ---
+    # 1. Seleccionamos las notas correctas según el equipo
+    if datos["Tipo Equipo"] == "UPS": notas_seleccionadas = notas_ups
+    elif datos["Tipo Equipo"] == "CFR": notas_seleccionadas = notas_cfr
+    else: notas_seleccionadas = notas_amcr
+
+    # 2. Parámetros base y Variables de Control
+    TAMANO_TEXTO_NOTAS = 2.5
+    INTERLINEADO_NOTAS = 4.5
+    
+    # ⚙️ VARIABLES PARA CALIBRAR EL CASO A (Anclado abajo a la izquierda):
+    OFFSET_X_NOTAS_CASO_A = 19.13  # Alineado perfectamente con el inicio de la tabla
+    OFFSET_Y_NOTAS_CASO_A = 70.0   # Sube o baja las notas desde el piso del marco
+    
+    # ⚙️ VARIABLES PARA CALIBRAR EL CASO B (Anclado abajo a la derecha):
+    OFFSET_X_NOTAS_CASO_B = 426  
+    OFFSET_Y_NOTAS_CASO_B = 85.0   
+    
+    # ⚙️ GATILLO: ¿A los cuántos renglones de tabla saltamos al Caso B?
+    MAX_RENGLONES_TABLA = 40
+
+    # 3. Lógica de posicionamiento automático
+    if total_lineas <= MAX_RENGLONES_TABLA:
+        # CASO A: Fijo en la esquina inferior izquierda
+        y_nota_actual = insert_y + (OFFSET_Y_NOTAS_CASO_A * factor_escala)
+        x_nota_actual = insert_x + (OFFSET_X_NOTAS_CASO_A * factor_escala)
+        
+        tamano_fuente = TAMANO_TEXTO_NOTAS * factor_escala * factor_compresion
+        interlineado_actual = INTERLINEADO_NOTAS * factor_escala * factor_compresion
+    else:
+        # CASO B: Tabla muy grande, saltamos a la posición de respaldo
+        y_nota_actual = insert_y + (OFFSET_Y_NOTAS_CASO_B * factor_escala)
+        x_nota_actual = insert_x + (OFFSET_X_NOTAS_CASO_B * factor_escala)
+        
+        # Eliminamos el factor_compresion para que el CAD no deforme el texto
+        # y reducimos a 0.6 para garantizar que quepa perfecto.
+        tamano_fuente = (TAMANO_TEXTO_NOTAS * 0.6) * factor_escala 
+        interlineado_actual = (INTERLINEADO_NOTAS * 0.6) * factor_escala
+
+    # 4. Dibujar renglón por renglón
+    for linea in notas_seleccionadas:
+        msp.add_text(linea, height=tamano_fuente).set_placement((x_nota_actual, y_nota_actual))
+        y_nota_actual -= interlineado_actual
+    # ------------------------------------
+
     fecha_actual = datetime.now().strftime("%m/%y")
     nombre_oficial = generar_nombre_base(datos) 
     numero_diag = datos.get("Numero Diagrama", "000000")
@@ -949,21 +1034,14 @@ logo_html = """<div style="display: flex; align-items: center; gap: 15px; margin
 Industronic
 </span>
 </div>"""
+
 # --- INICIO DE LA CABECERA ---
-col_logo, col_titulo, col_diag = st.columns([1.5, 3.5, 1.8]) 
+# Renderizamos el logo directamente sin columnas
+st.markdown(logo_html, unsafe_allow_html=True)
 
-with col_logo:
-    st.markdown(logo_html, unsafe_allow_html=True)
-
-with col_titulo:
-    # Usamos un <div> en lugar de <h1> para que el CSS global no lo esconda, y ajustamos el texto
-    st.markdown('<div style="padding-top: 20px; font-size: 2.6rem; font-weight: 800; line-height: 1.1;">CREADOR DE DIAGRAMAS UNIFILARES</div>', unsafe_allow_html=True)
-    st.markdown("Plataforma Web para Generación Automática de Diagramas Unifilares CAD (DXF)")
-
-with col_diag:
-    st.write("") 
-    # Cambiamos a use_container_width=True para quitar la caja amarilla de advertencia
-    st.image("diagrama_logo.png", use_container_width=True)
+# Renderizamos los títulos justo debajo, ocupando todo el ancho
+st.markdown('<div style="padding-top: 5px; font-size: 2.6rem; font-weight: 800; line-height: 1.1;">CREADOR DE DIAGRAMAS UNIFILARES</div>', unsafe_allow_html=True)
+st.markdown("Plataforma Web para Generación Automática de Diagramas Unifilares CAD (DXF)")
 
 st.divider()
 # --- FIN DE LA CABECERA ---
@@ -1168,7 +1246,8 @@ with st.container(border=True):
                 "lleva_breaker": True
             })
 
-    firma_estado = f"{tipo_equipo}_{capacidad}_{voltaje_red}_{voltaje_in}_{voltaje_out}_{topologia}_{cantidad_ups}_{gabconx}_{filtro}_{trafo_in}_{trafo_out}"
+    # Se agregan al final voltaje_gabconx y voltaje_gabpar
+    firma_estado = f"{tipo_equipo}_{capacidad}_{voltaje_red}_{voltaje_in}_{voltaje_out}_{topologia}_{cantidad_ups}_{gabconx}_{filtro}_{trafo_in}_{trafo_out}_{voltaje_gabconx}_{voltaje_gabpar}"
     opciones_fase_limpias = [f"{calibre} (Soporta {amp}A)" for calibre, amp in TABLA_FASE_NEUTRO]
     opciones_tierra_limpias = [f"{calibre} (Soporta {amp}A)" for calibre, amp in TABLA_TIERRA]
 
