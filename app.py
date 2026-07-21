@@ -207,8 +207,19 @@ def generar_nombre_base(datos):
         prefijo_eq = f"UPS-IND HF {prefijo}{familia_str}"
         nombre = f"DIAGRAMA UNIFILAR PARA {num_ups} {prefijo_eq} {capacidad_num}KVA 3F " if "Paralelo" in datos["Topología"] else f"DIAGRAMA UNIFILAR {prefijo_eq} {capacidad_num}KVA 3F "
         
-    if datos["Voltaje In"] == datos["Voltaje Out"]: nombre += f"VN {datos['Voltaje Out']}"
-    else: nombre += f"VE {datos['Voltaje In']} VS {datos['Voltaje Out']}"
+    # --- LÓGICA INTELIGENTE PARA EL VOLTAJE DEL NOMBRE ---
+    if "Paralelo" in datos["Topología"]:
+        voltaje_in_sistema = datos["Voltaje GABCONX"] if datos["GABCONX"] == "Sí" else datos["Voltaje In"]
+        voltaje_out_sistema = datos["Voltaje GABPAR"]
+    else:
+        voltaje_in_sistema = datos["Voltaje In"]
+        voltaje_out_sistema = datos["Voltaje Out"]
+
+    if voltaje_in_sistema == voltaje_out_sistema: 
+        nombre += f"VN {voltaje_out_sistema} "
+    else: 
+        nombre += f"VE {voltaje_in_sistema} VS {voltaje_out_sistema} "
+    # ----------------------------------------------------
         
     if datos["SPV"] == "Sí":
         mapa_spv = {"50 kA": "3050", "100 kA": "3100", "200 kA": "3200", "400 kA": "3400", "530 kA": "3530"}
@@ -220,10 +231,18 @@ def generar_nombre_base(datos):
     
     if datos["Filtro"] != "Ninguno": nombre += f" + {obtener_modelo_filtro(datos['Filtro'], capacidad_num)}"
         
+    # --- LÓGICA INTELIGENTE PARA LA CAPACIDAD DE GABINETES PARALELOS ---
     if "Paralelo" in datos["Topología"]:
-        cap_gabinete = capacidad_num if datos["Topología"] == "Paralelo Redundante" else capacidad_num * num_ups
-        nombre += f" + GABPAR-13{cap_gabinete:02d}"
-        if datos["GABCONX"] == "Sí": nombre += f" + GABCONX-13{cap_gabinete:02d}"
+        if "Capacidad" in datos["Topología"]:
+            capacidad_gabinetes = capacidad_num * num_ups
+        else:
+            capacidad_gabinetes = capacidad_num 
+            
+        nombre += f" + GABPAR-13{capacidad_gabinetes:02d}"
+        
+        if datos["GABCONX"] == "Sí": 
+            nombre += f" + GABCONX-13{capacidad_gabinetes:02d}"
+    # -------------------------------------------------------------------
 
     return nombre.replace("/", "-")
 
