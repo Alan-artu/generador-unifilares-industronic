@@ -33,6 +33,12 @@ CAPACIDADES_UPS = ["10 KVA", "15 KVA", "20 KVA", "30 KVA", "40 KVA", "60 KVA", "
 CAPACIDADES_CFR = ["10 KVA", "15 KVA", "20 KVA", "30 KVA", "40 KVA", "60 KVA", "80 KVA", "100 KVA", "120 KVA", "160 KVA", "180 KVA", "200 KVA", "300 KVA", "400 KVA", "500 KVA", "600 KVA", "800 KVA", "1000 KVA"]
 CAPACIDADES_AMCR = ["6 KVA", "10 KVA", "15 KVA", "20 KVA", "30 KVA", "45 KVA", "60 KVA", "80 KVA", "100 KVA", "150 KVA", "200 KVA", "300 KVA", "400 KVA", "500 KVA", "800 KVA", "1000 KVA"]
 
+# --- NUEVOS EQUIPOS (FILTROS ACTIVOS) ---
+CAPACIDADES_FAA_L = ["90", "180", "270", "360", "450"]
+CAPACIDADES_FAA_H = ["120", "240", "360", "480", "600"]
+CAPACIDADES_CRFA_L = ["35", "70", "105", "140", "175"]
+CAPACIDADES_CRFA_H = ["100", "200", "300", "400", "500"]
+
 # ==========================================
 #   VARIABLES DE AJUSTE GEOMÉTRICO
 # ==========================================
@@ -115,7 +121,7 @@ OFFSET_GLOBO_SALIDA_FINAL      = (0, -40)
 #   MOTOR DE CÁLCULO DE INGENIERÍA MEJORADO
 # ==========================================
 def calcular_ingenieria_pura(kva_total, voltaje_str, es_entrada=False, tipo_eq="UPS"):
-    v_ll = float(voltaje_str.split("/")[-1].replace("D", ""))
+    v_ll = float(voltaje_str.split("/")[-1].replace("D", "").replace("V", "").strip())
     corriente = (kva_total * 1000) / (math.sqrt(3) * v_ll)
     
     # SOLO el UPS lleva el 25% de sobredimensionamiento en la entrada
@@ -161,6 +167,57 @@ def calcular_ingenieria_pura(kva_total, voltaje_str, es_entrada=False, tipo_eq="
         "kva_sistema": kva_total
     }
 
+def calcular_ingenieria_filtros(capacidad_str, voltaje_str, tipo_eq):
+    v_ll = float(voltaje_str.split("/")[-1].replace("D", "").replace("V", "").strip())
+    capacidad_num = float(capacidad_str)
+    
+    if tipo_eq == "CR FA":
+        corriente_base = (capacidad_num * 1000) / (math.sqrt(3) * v_ll)
+    else:
+        corriente_base = capacidad_num
+
+    corriente_fase = corriente_base * 1.25
+    proteccion = math.ceil(corriente_fase / 10) * 10
+
+    corriente_neutro = corriente_fase * 2 if tipo_eq == "FAA" else corriente_fase
+
+    num_conductores_fase = math.ceil(corriente_fase / 700) if corriente_fase > 700 else 1
+    amp_por_hilo_fase = proteccion / num_conductores_fase
+    calibre_fase = "500 KCMIL"
+    for awg, amp in TABLA_FASE_NEUTRO:
+        if amp > amp_por_hilo_fase: 
+            calibre_fase = awg
+            break
+
+    num_conductores_neutro = math.ceil(corriente_neutro / 700) if corriente_neutro > 700 else 1
+    amp_por_hilo_neutro = (proteccion * 2) / num_conductores_neutro if tipo_eq == "FAA" else amp_por_hilo_fase
+    calibre_neutro = "500 KCMIL"
+    for awg, amp in TABLA_FASE_NEUTRO:
+        if amp > amp_por_hilo_neutro: 
+            calibre_neutro = awg
+            break
+
+    num_conductores_tierra = math.ceil(proteccion / 4000) if proteccion > 4000 else 1
+    amp_por_hilo_tierra = proteccion / num_conductores_tierra
+    calibre_tierra = "500 KCMIL"
+    for awg, amp in TABLA_TIERRA:
+        if amp > amp_por_hilo_tierra: 
+            calibre_tierra = awg
+            break
+
+    return {
+        "corriente": round(corriente_base, 2), 
+        "corriente_fase": round(corriente_fase, 2),
+        "corriente_neutro": round(corriente_neutro, 2),
+        "proteccion": int(proteccion), 
+        "calibre_fase": calibre_fase, 
+        "hilos_fase": num_conductores_fase, 
+        "calibre_neutro": calibre_neutro, 
+        "hilos_neutro": num_conductores_neutro, 
+        "tierra": calibre_tierra, 
+        "hilos_tierra": num_conductores_tierra
+    }
+
 def obtener_modelo_filtro(tipo_filtro, kva):
     if tipo_filtro == "FAP":
         modelos = [30, 45, 50, 100, 150, 200, 300, 500]
@@ -175,6 +232,17 @@ def obtener_modelo_filtro(tipo_filtro, kva):
     return ""
 
 def generar_nombre_base(datos):
+    # --- NOMENCLATURA PARA FILTROS ACTIVOS (FAA Y CR FA) ---
+    if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
+        cap_val = datos["Capacidad"]
+        v_in = datos["Voltaje In"]
+        sufijo = "L" if any(v in v_in for v in ["208", "220", "240", "120", "127"]) else "H"
+        if datos["Tipo Equipo"] == "FAA":
+            modelo = f"FAA-IND {cap_val}-{sufijo}"
+            return f"DIAGRAMA UNIFILAR FILTRO ACTIVO {modelo} 3F, {cap_val}A, {v_in}".replace("/", "-")
+        else:
+            modelo = f"CR FA-IND {cap_val}-{sufijo}"
+            return f"DIAGRAMA UNIFILAR COMPENSADOR {modelo} 3F, {cap_val}KVAR, {v_in}".replace("/", "-")
     capacidad_num = int(datos["Capacidad"].replace(" KVA", ""))
     num_ups = int(datos["Cantidad UPS"])
     prefijo = f"13{capacidad_num:02d}"
@@ -287,6 +355,46 @@ def obtener_indices_tabla(datos):
 
 def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
     secciones = []
+    
+    # --- TABLA DE 4 PUNTOS EXCLUSIVA PARA FAA Y CR FA ---
+    if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
+        cap_val = datos["Capacidad"]
+        v_in = datos["Voltaje In"]
+        sufijo = "L" if any(v in v_in for v in ["208", "220", "240", "120", "127"]) else "H"
+        eng = calcular_ingenieria_filtros(cap_val, v_in, datos["Tipo Equipo"])
+        
+        pr_filt = datos.get("PR_FILTRO", eng['proteccion'])
+        cf_filt = datos.get("CF_FILTRO", eng['calibre_fase'])
+        cn_filt = datos.get("CN_FILTRO", eng['calibre_neutro'])
+        ct_filt = datos.get("CT_FILTRO", eng['tierra'])
+        hf_filt = datos.get("HF_FILTRO", eng['hilos_fase'])
+        hn_filt = datos.get("HN_FILTRO", eng['hilos_neutro'])
+        ht_filt = datos.get("HT_FILTRO", eng['hilos_tierra'])
+
+        if datos["Tipo Equipo"] == "FAA":
+            modelo = f"FAA-IND {cap_val}-{sufijo}"
+            txt_comp = f"CORRIENTE DE COMPENSACIÓN MÁXIMA = {cap_val} AMP"
+            txt_equipo_cap = f"{cap_val} AMP 3 FASES"
+        else:
+            modelo = f"CR FA-IND {cap_val}-{sufijo}"
+            txt_comp = f"POTENCIA REACTIVA COMPENSACION MAXIMA = {cap_val} kVAR"
+            txt_equipo_cap = f"{cap_val} kVAR 3 FASES"
+
+        return [
+            {"num": "1", "lineas": ["ENTRADA DE ALIMENTACIÓN", f"VOLTAJE: {v_in}"]},
+            {"num": "2", "lineas": [
+                "CABLEADO FILTRO ACTIVO",
+                txt_comp,
+                f"PROTECCIÓN = 3 X {pr_filt} AMP",
+                f"{hf_filt * 3}-CABLE CAL. {cf_filt} ({hf_filt} X FASE)",
+                f"{hn_filt}-CABLE CAL. {cn_filt} ({hn_filt} X NEUTRO)",
+                f"{ht_filt}-CABLE CAL. {ct_filt} ({ht_filt} X TIERRA)",
+                "CABLEADO SUMINISTRADO POR EL USUARIO"
+            ]},
+            {"num": "3", "lineas": [modelo, "MARCA INDUSTRONIC", txt_equipo_cap, f"VOLTAJE NOMINAL: {v_in}"]},
+            {"num": "4", "lineas": ["CARGA NO LINEAL", f"VOLTAJE: {v_in}"]}
+        ]
+
     indices = obtener_indices_tabla(datos)
     
     # ------------------ LÓGICA EXCLUSIVA AMCR ------------------
@@ -687,6 +795,427 @@ def generar_diagrama_dxf(datos):
         registrar_bloque(doc, f"trafo_directa_{i}_at.dxf", f"BLK_TRAFO_DIRECTA_{i}_AT")
         registrar_bloque(doc, f"trafo_directa_{i}_ta.dxf", f"BLK_TRAFO_DIRECTA_{i}_TA")
 
+    # --- RENDERIZADO RÁPIDO PARA FILTROS ACTIVOS (ESTÁTICO) ---
+    if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
+        registrar_bloque(doc, "filtro_activo.dxf", "BLK_FILTRO_ACTIVO")
+        msp.add_blockref("BLK_FILTRO_ACTIVO", insert=(0, 0))
+
+        # Cuadro de límites para ajustar el marco automáticamente
+        x_min, x_max, y_min, y_max = -120, 120, -180, 50
+        ancho_dibujo, alto_dibujo = x_max - x_min, y_max - y_min
+        centro_x_dibujo, centro_y_dibujo = (x_max + x_min) / 2, (y_max + y_min) / 2
+        
+        area_util_ancho, area_util_alto = 387.89, 377.07
+        factor_escala = max(1.0, max(ancho_dibujo / area_util_ancho, alto_dibujo / area_util_alto) * FACTOR_HOLGURA_MARCO)
+        
+        cx_area_util_bloque = 154.14 + (area_util_ancho / 2)
+        cy_area_util_bloque = 54.93 + (area_util_alto / 2)
+        insert_x = centro_x_dibujo - (cx_area_util_bloque * factor_escala)
+        insert_y = centro_y_dibujo - (cy_area_util_bloque * factor_escala)
+        
+        msp.add_blockref("BLK_MARCO", insert=(insert_x, insert_y), dxfattribs={'xscale': factor_escala, 'yscale': factor_escala, 'zscale': factor_escala})
+
+        # Renderizar Tabla de Datos
+        secciones = generar_secciones_tabla(datos, 0, 1, 0)
+        x_tabla_base = insert_x + (COORD_X_INICIO_TABLA * factor_escala)
+        y_tabla_base = insert_y + (COORD_Y_INICIO_TABLA * factor_escala)
+        w_tot, w_c1 = TABLA_ANCHO_TOTAL * factor_escala, TABLA_ANCHO_COL_1 * factor_escala
+        h_ren, t_size = TABLA_ALTO_RENGLON * factor_escala, TABLA_TAMANO_TEXTO * factor_escala
+        
+        y_curr = y_tabla_base
+        msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
+        for sec in secciones:
+            y_sec_start = y_curr
+            for linea in sec["lineas"]:
+                msp.add_text(linea, height=t_size).set_placement((x_tabla_base + w_c1 + (2*factor_escala), y_curr - (h_ren*0.8)))
+                y_curr -= h_ren
+                msp.add_line((x_tabla_base + w_c1, y_curr), (x_tabla_base + w_tot, y_curr))
+            msp.add_text(str(sec["num"]), height=t_size*1.3).set_placement((x_tabla_base + (w_c1/2), ((y_sec_start + y_curr)/2) - (t_size*0.65)), align=TextEntityAlignment.CENTER)
+            msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
+            
+        msp.add_line((x_tabla_base, y_tabla_base), (x_tabla_base, y_curr))
+        msp.add_line((x_tabla_base + w_c1, y_tabla_base), (x_tabla_base + w_c1, y_curr))
+        msp.add_line((x_tabla_base + w_tot, y_tabla_base), (x_tabla_base + w_tot, y_curr))
+
+        # Cajetín de Firmas y Título COMPLETOS
+        fecha_actual = datetime.now().strftime("%m/%y")
+        nombre_oficial = generar_nombre_base(datos)
+        numero_diag = datos.get("Numero Diagrama", "000000")
+        
+        # Nombre del diagrama
+        t_nom = msp.add_text(nombre_oficial, height=2.0 * factor_escala)
+        t_nom.set_placement((insert_x + (COORD_X_CAJETIN_NOMBRE * factor_escala), insert_y + (COORD_Y_CAJETIN_NOMBRE * factor_escala)))
+        t_nom.dxf.color = 6
+        
+        # Dibujó
+        t_dib = msp.add_text(datos["Dibujó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_dib.set_placement((insert_x + (COORD_X_CAJETIN_DIBUJO * factor_escala), insert_y + (COORD_Y_CAJETIN_DIBUJO * factor_escala)))
+        t_dib.dxf.color = 4
+        t_f_dib = msp.add_text(fecha_actual, height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_f_dib.set_placement((insert_x + (COORD_X_CAJETIN_FECH_D * factor_escala), insert_y + (COORD_Y_CAJETIN_FECH_D * factor_escala)))
+        t_f_dib.dxf.color = 2
+        
+        # Revisó
+        t_rev = msp.add_text(datos["Revisó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_rev.set_placement((insert_x + (COORD_X_CAJETIN_REVISO * factor_escala), insert_y + (COORD_Y_CAJETIN_REVISO * factor_escala)))
+        t_rev.dxf.color = 30
+        t_f_rev = msp.add_text(fecha_actual, height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_f_rev.set_placement((insert_x + (COORD_X_CAJETIN_FECH_R * factor_escala), insert_y + (COORD_Y_CAJETIN_FECH_R * factor_escala)))
+        t_f_rev.dxf.color = 2
+        
+        # Aprobó (Usamos al revisor por default como en el resto de los equipos)
+        t_apr = msp.add_text(datos["Revisó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_apr.set_placement((insert_x + (COORD_X_CAJETIN_APROBO * factor_escala), insert_y + (COORD_Y_CAJETIN_APROBO * factor_escala)))
+        t_apr.dxf.color = 30
+        t_f_apr = msp.add_text(fecha_actual, height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_f_apr.set_placement((insert_x + (COORD_X_CAJETIN_FECH_A * factor_escala), insert_y + (COORD_Y_CAJETIN_FECH_A * factor_escala)))
+        t_f_apr.dxf.color = 2
+        
+        # Números de diagrama (Abajo a la derecha y Arriba a la izquierda invertido)
+        t_num = msp.add_text(numero_diag, height=TAMANO_TEXTO_NUMERO * factor_escala)
+        t_num.set_placement((insert_x + (COORD_X_CAJETIN_NUMERO * factor_escala), insert_y + (COORD_Y_CAJETIN_NUMERO * factor_escala)))
+        t_num.dxf.color = 1
+        
+        t_num_top = msp.add_text(numero_diag, height=TAMANO_TEXTO_NUMERO * factor_escala)
+        t_num_top.set_placement((insert_x + (COORD_X_CAJETIN_NUMERO_TOP * factor_escala), insert_y + (COORD_Y_CAJETIN_NUMERO_TOP * factor_escala)))
+        t_num_top.dxf.color = 1
+        t_num_top.dxf.rotation = 180
+
+        return doc, f"{numero_diag} {nombre_oficial}.dxf"
+
+    # --- LÓGICA ESTÁNDAR UPS / CFR / AMCR ---
+    # --- RENDERIZADO RÁPIDO PARA FILTROS ACTIVOS (ESTÁTICO) ---
+    if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
+        registrar_bloque(doc, "filtro_activo.dxf", "BLK_FILTRO_ACTIVO")
+        msp.add_blockref("BLK_FILTRO_ACTIVO", insert=(0, 0))
+
+        # Cuadro de límites para ajustar el marco automáticamente
+        x_min, x_max, y_min, y_max = -120, 120, -180, 50
+        ancho_dibujo, alto_dibujo = x_max - x_min, y_max - y_min
+        centro_x_dibujo, centro_y_dibujo = (x_max + x_min) / 2, (y_max + y_min) / 2
+        
+        area_util_ancho, area_util_alto = 387.89, 377.07
+        factor_escala = max(1.0, max(ancho_dibujo / area_util_ancho, alto_dibujo / area_util_alto) * FACTOR_HOLGURA_MARCO)
+        
+        cx_area_util_bloque = 154.14 + (area_util_ancho / 2)
+        cy_area_util_bloque = 54.93 + (area_util_alto / 2)
+        insert_x = centro_x_dibujo - (cx_area_util_bloque * factor_escala)
+        insert_y = centro_y_dibujo - (cy_area_util_bloque * factor_escala)
+        
+        msp.add_blockref("BLK_MARCO", insert=(insert_x, insert_y), dxfattribs={'xscale': factor_escala, 'yscale': factor_escala, 'zscale': factor_escala})
+
+        # Renderizar Tabla de Datos
+        secciones = generar_secciones_tabla(datos, 0, 1, 0)
+        x_tabla_base = insert_x + (COORD_X_INICIO_TABLA * factor_escala)
+        y_tabla_base = insert_y + (COORD_Y_INICIO_TABLA * factor_escala)
+        w_tot, w_c1 = TABLA_ANCHO_TOTAL * factor_escala, TABLA_ANCHO_COL_1 * factor_escala
+        h_ren, t_size = TABLA_ALTO_RENGLON * factor_escala, TABLA_TAMANO_TEXTO * factor_escala
+        
+        y_curr = y_tabla_base
+        msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
+        for sec in secciones:
+            y_sec_start = y_curr
+            for linea in sec["lineas"]:
+                msp.add_text(linea, height=t_size).set_placement((x_tabla_base + w_c1 + (2*factor_escala), y_curr - (h_ren*0.8)))
+                y_curr -= h_ren
+                msp.add_line((x_tabla_base + w_c1, y_curr), (x_tabla_base + w_tot, y_curr))
+            msp.add_text(str(sec["num"]), height=t_size*1.3).set_placement((x_tabla_base + (w_c1/2), ((y_sec_start + y_curr)/2) - (t_size*0.65)), align=TextEntityAlignment.CENTER)
+            msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
+            
+        msp.add_line((x_tabla_base, y_tabla_base), (x_tabla_base, y_curr))
+        msp.add_line((x_tabla_base + w_c1, y_tabla_base), (x_tabla_base + w_c1, y_curr))
+        msp.add_line((x_tabla_base + w_tot, y_tabla_base), (x_tabla_base + w_tot, y_curr))
+
+        # Cajetín de Firmas y Título
+        fecha_actual = datetime.now().strftime("%m/%y")
+        nombre_oficial = generar_nombre_base(datos)
+        numero_diag = datos.get("Numero Diagrama", "000000")
+        
+        t_nom = msp.add_text(nombre_oficial, height=2.0 * factor_escala)
+        t_nom.set_placement((insert_x + (COORD_X_CAJETIN_NOMBRE * factor_escala), insert_y + (COORD_Y_CAJETIN_NOMBRE * factor_escala)))
+        t_nom.dxf.color = 6
+        
+        t_dib = msp.add_text(datos["Dibujó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_dib.set_placement((insert_x + (COORD_X_CAJETIN_DIBUJO * factor_escala), insert_y + (COORD_Y_CAJETIN_DIBUJO * factor_escala)))
+        t_dib.dxf.color = 4
+        
+        t_rev = msp.add_text(datos["Revisó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_rev.set_placement((insert_x + (COORD_X_CAJETIN_REVISO * factor_escala), insert_y + (COORD_Y_CAJETIN_REVISO * factor_escala)))
+        t_rev.dxf.color = 30
+        
+        t_num = msp.add_text(numero_diag, height=TAMANO_TEXTO_NUMERO * factor_escala)
+        t_num.set_placement((insert_x + (COORD_X_CAJETIN_NUMERO * factor_escala), insert_y + (COORD_Y_CAJETIN_NUMERO * factor_escala)))
+        t_num.dxf.color = 1
+
+        return doc, f"{numero_diag} {nombre_oficial}.dxf"
+
+    # --- LÓGICA ESTÁNDAR UPS / CFR / AMCR ---
+    # --- RENDERIZADO RÁPIDO PARA FILTROS ACTIVOS (ESTÁTICO) ---
+    if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
+        registrar_bloque(doc, "filtro_activo.dxf", "BLK_FILTRO_ACTIVO")
+        msp.add_blockref("BLK_FILTRO_ACTIVO", insert=(0, 0))
+
+        # Cuadro de límites para ajustar el marco automáticamente
+        x_min, x_max, y_min, y_max = -120, 120, -180, 50
+        ancho_dibujo, alto_dibujo = x_max - x_min, y_max - y_min
+        centro_x_dibujo, centro_y_dibujo = (x_max + x_min) / 2, (y_max + y_min) / 2
+        
+        area_util_ancho, area_util_alto = 387.89, 377.07
+        factor_escala = max(1.0, max(ancho_dibujo / area_util_ancho, alto_dibujo / area_util_alto) * FACTOR_HOLGURA_MARCO)
+        
+        cx_area_util_bloque = 154.14 + (area_util_ancho / 2)
+        cy_area_util_bloque = 54.93 + (area_util_alto / 2)
+        insert_x = centro_x_dibujo - (cx_area_util_bloque * factor_escala)
+        insert_y = centro_y_dibujo - (cy_area_util_bloque * factor_escala)
+        
+        msp.add_blockref("BLK_MARCO", insert=(insert_x, insert_y), dxfattribs={'xscale': factor_escala, 'yscale': factor_escala, 'zscale': factor_escala})
+
+        # Renderizar Tabla de Datos
+        secciones = generar_secciones_tabla(datos, 0, 1, 0)
+        x_tabla_base = insert_x + (COORD_X_INICIO_TABLA * factor_escala)
+        y_tabla_base = insert_y + (COORD_Y_INICIO_TABLA * factor_escala)
+        w_tot, w_c1 = TABLA_ANCHO_TOTAL * factor_escala, TABLA_ANCHO_COL_1 * factor_escala
+        h_ren, t_size = TABLA_ALTO_RENGLON * factor_escala, TABLA_TAMANO_TEXTO * factor_escala
+        
+        y_curr = y_tabla_base
+        msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
+        for sec in secciones:
+            y_sec_start = y_curr
+            for linea in sec["lineas"]:
+                msp.add_text(linea, height=t_size).set_placement((x_tabla_base + w_c1 + (2*factor_escala), y_curr - (h_ren*0.8)))
+                y_curr -= h_ren
+                msp.add_line((x_tabla_base + w_c1, y_curr), (x_tabla_base + w_tot, y_curr))
+            msp.add_text(str(sec["num"]), height=t_size*1.3).set_placement((x_tabla_base + (w_c1/2), ((y_sec_start + y_curr)/2) - (t_size*0.65)), align=TextEntityAlignment.CENTER)
+            msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
+            
+        msp.add_line((x_tabla_base, y_tabla_base), (x_tabla_base, y_curr))
+        msp.add_line((x_tabla_base + w_c1, y_tabla_base), (x_tabla_base + w_c1, y_curr))
+        msp.add_line((x_tabla_base + w_tot, y_tabla_base), (x_tabla_base + w_tot, y_curr))
+
+        # Cajetín de Firmas y Título
+        fecha_actual = datetime.now().strftime("%m/%y")
+        nombre_oficial = generar_nombre_base(datos)
+        numero_diag = datos.get("Numero Diagrama", "000000")
+        
+        t_nom = msp.add_text(nombre_oficial, height=2.0 * factor_escala)
+        t_nom.set_placement((insert_x + (COORD_X_CAJETIN_NOMBRE * factor_escala), insert_y + (COORD_Y_CAJETIN_NOMBRE * factor_escala)))
+        t_nom.dxf.color = 6
+        
+        t_dib = msp.add_text(datos["Dibujó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_dib.set_placement((insert_x + (COORD_X_CAJETIN_DIBUJO * factor_escala), insert_y + (COORD_Y_CAJETIN_DIBUJO * factor_escala)))
+        t_dib.dxf.color = 4
+        
+        t_rev = msp.add_text(datos["Revisó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_rev.set_placement((insert_x + (COORD_X_CAJETIN_REVISO * factor_escala), insert_y + (COORD_Y_CAJETIN_REVISO * factor_escala)))
+        t_rev.dxf.color = 30
+        
+        t_num = msp.add_text(numero_diag, height=TAMANO_TEXTO_NUMERO * factor_escala)
+        t_num.set_placement((insert_x + (COORD_X_CAJETIN_NUMERO * factor_escala), insert_y + (COORD_Y_CAJETIN_NUMERO * factor_escala)))
+        t_num.dxf.color = 1
+
+        return doc, f"{numero_diag} {nombre_oficial}.dxf"
+
+    # --- LÓGICA ESTÁNDAR UPS / CFR / AMCR ---
+    # --- RENDERIZADO RÁPIDO PARA FILTROS ACTIVOS (ESTÁTICO) ---
+    if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
+        registrar_bloque(doc, "filtro_activo.dxf", "BLK_FILTRO_ACTIVO")
+        msp.add_blockref("BLK_FILTRO_ACTIVO", insert=(0, 0))
+
+        # Cuadro de límites para ajustar el marco automáticamente
+        x_min, x_max, y_min, y_max = -120, 120, -180, 50
+        ancho_dibujo, alto_dibujo = x_max - x_min, y_max - y_min
+        centro_x_dibujo, centro_y_dibujo = (x_max + x_min) / 2, (y_max + y_min) / 2
+        
+        area_util_ancho, area_util_alto = 387.89, 377.07
+        factor_escala = max(1.0, max(ancho_dibujo / area_util_ancho, alto_dibujo / area_util_alto) * FACTOR_HOLGURA_MARCO)
+        
+        cx_area_util_bloque = 154.14 + (area_util_ancho / 2)
+        cy_area_util_bloque = 54.93 + (area_util_alto / 2)
+        insert_x = centro_x_dibujo - (cx_area_util_bloque * factor_escala)
+        insert_y = centro_y_dibujo - (cy_area_util_bloque * factor_escala)
+        
+        msp.add_blockref("BLK_MARCO", insert=(insert_x, insert_y), dxfattribs={'xscale': factor_escala, 'yscale': factor_escala, 'zscale': factor_escala})
+
+        # Renderizar Tabla de Datos
+        secciones = generar_secciones_tabla(datos, 0, 1, 0)
+        x_tabla_base = insert_x + (COORD_X_INICIO_TABLA * factor_escala)
+        y_tabla_base = insert_y + (COORD_Y_INICIO_TABLA * factor_escala)
+        w_tot, w_c1 = TABLA_ANCHO_TOTAL * factor_escala, TABLA_ANCHO_COL_1 * factor_escala
+        h_ren, t_size = TABLA_ALTO_RENGLON * factor_escala, TABLA_TAMANO_TEXTO * factor_escala
+        
+        y_curr = y_tabla_base
+        msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
+        for sec in secciones:
+            y_sec_start = y_curr
+            for linea in sec["lineas"]:
+                msp.add_text(linea, height=t_size).set_placement((x_tabla_base + w_c1 + (2*factor_escala), y_curr - (h_ren*0.8)))
+                y_curr -= h_ren
+                msp.add_line((x_tabla_base + w_c1, y_curr), (x_tabla_base + w_tot, y_curr))
+            msp.add_text(str(sec["num"]), height=t_size*1.3).set_placement((x_tabla_base + (w_c1/2), ((y_sec_start + y_curr)/2) - (t_size*0.65)), align=TextEntityAlignment.CENTER)
+            msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
+            
+        msp.add_line((x_tabla_base, y_tabla_base), (x_tabla_base, y_curr))
+        msp.add_line((x_tabla_base + w_c1, y_tabla_base), (x_tabla_base + w_c1, y_curr))
+        msp.add_line((x_tabla_base + w_tot, y_tabla_base), (x_tabla_base + w_tot, y_curr))
+
+        # Cajetín de Firmas y Título
+        fecha_actual = datetime.now().strftime("%m/%y")
+        nombre_oficial = generar_nombre_base(datos)
+        numero_diag = datos.get("Numero Diagrama", "000000")
+        
+        t_nom = msp.add_text(nombre_oficial, height=2.0 * factor_escala)
+        t_nom.set_placement((insert_x + (COORD_X_CAJETIN_NOMBRE * factor_escala), insert_y + (COORD_Y_CAJETIN_NOMBRE * factor_escala)))
+        t_nom.dxf.color = 6
+        
+        t_dib = msp.add_text(datos["Dibujó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_dib.set_placement((insert_x + (COORD_X_CAJETIN_DIBUJO * factor_escala), insert_y + (COORD_Y_CAJETIN_DIBUJO * factor_escala)))
+        t_dib.dxf.color = 4
+        
+        t_rev = msp.add_text(datos["Revisó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_rev.set_placement((insert_x + (COORD_X_CAJETIN_REVISO * factor_escala), insert_y + (COORD_Y_CAJETIN_REVISO * factor_escala)))
+        t_rev.dxf.color = 30
+        
+        t_num = msp.add_text(numero_diag, height=TAMANO_TEXTO_NUMERO * factor_escala)
+        t_num.set_placement((insert_x + (COORD_X_CAJETIN_NUMERO * factor_escala), insert_y + (COORD_Y_CAJETIN_NUMERO * factor_escala)))
+        t_num.dxf.color = 1
+
+        return doc, f"{numero_diag} {nombre_oficial}.dxf"
+
+    # --- LÓGICA ESTÁNDAR UPS / CFR / AMCR ---
+    # --- RENDERIZADO RÁPIDO PARA FILTROS ACTIVOS (ESTÁTICO) ---
+    if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
+        registrar_bloque(doc, "filtro_activo.dxf", "BLK_FILTRO_ACTIVO")
+        msp.add_blockref("BLK_FILTRO_ACTIVO", insert=(0, 0))
+
+        # Cuadro de límites para ajustar el marco automáticamente
+        x_min, x_max, y_min, y_max = -120, 120, -180, 50
+        ancho_dibujo, alto_dibujo = x_max - x_min, y_max - y_min
+        centro_x_dibujo, centro_y_dibujo = (x_max + x_min) / 2, (y_max + y_min) / 2
+        
+        area_util_ancho, area_util_alto = 387.89, 377.07
+        factor_escala = max(1.0, max(ancho_dibujo / area_util_ancho, alto_dibujo / area_util_alto) * FACTOR_HOLGURA_MARCO)
+        
+        cx_area_util_bloque = 154.14 + (area_util_ancho / 2)
+        cy_area_util_bloque = 54.93 + (area_util_alto / 2)
+        insert_x = centro_x_dibujo - (cx_area_util_bloque * factor_escala)
+        insert_y = centro_y_dibujo - (cy_area_util_bloque * factor_escala)
+        
+        msp.add_blockref("BLK_MARCO", insert=(insert_x, insert_y), dxfattribs={'xscale': factor_escala, 'yscale': factor_escala, 'zscale': factor_escala})
+
+        # Renderizar Tabla de Datos
+        secciones = generar_secciones_tabla(datos, 0, 1, 0)
+        x_tabla_base = insert_x + (COORD_X_INICIO_TABLA * factor_escala)
+        y_tabla_base = insert_y + (COORD_Y_INICIO_TABLA * factor_escala)
+        w_tot, w_c1 = TABLA_ANCHO_TOTAL * factor_escala, TABLA_ANCHO_COL_1 * factor_escala
+        h_ren, t_size = TABLA_ALTO_RENGLON * factor_escala, TABLA_TAMANO_TEXTO * factor_escala
+        
+        y_curr = y_tabla_base
+        msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
+        for sec in secciones:
+            y_sec_start = y_curr
+            for linea in sec["lineas"]:
+                msp.add_text(linea, height=t_size).set_placement((x_tabla_base + w_c1 + (2*factor_escala), y_curr - (h_ren*0.8)))
+                y_curr -= h_ren
+                msp.add_line((x_tabla_base + w_c1, y_curr), (x_tabla_base + w_tot, y_curr))
+            msp.add_text(str(sec["num"]), height=t_size*1.3).set_placement((x_tabla_base + (w_c1/2), ((y_sec_start + y_curr)/2) - (t_size*0.65)), align=TextEntityAlignment.CENTER)
+            msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
+            
+        msp.add_line((x_tabla_base, y_tabla_base), (x_tabla_base, y_curr))
+        msp.add_line((x_tabla_base + w_c1, y_tabla_base), (x_tabla_base + w_c1, y_curr))
+        msp.add_line((x_tabla_base + w_tot, y_tabla_base), (x_tabla_base + w_tot, y_curr))
+
+        # Cajetín de Firmas y Título
+        fecha_actual = datetime.now().strftime("%m/%y")
+        nombre_oficial = generar_nombre_base(datos)
+        numero_diag = datos.get("Numero Diagrama", "000000")
+        
+        t_nom = msp.add_text(nombre_oficial, height=2.0 * factor_escala)
+        t_nom.set_placement((insert_x + (COORD_X_CAJETIN_NOMBRE * factor_escala), insert_y + (COORD_Y_CAJETIN_NOMBRE * factor_escala)))
+        t_nom.dxf.color = 6
+        
+        t_dib = msp.add_text(datos["Dibujó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_dib.set_placement((insert_x + (COORD_X_CAJETIN_DIBUJO * factor_escala), insert_y + (COORD_Y_CAJETIN_DIBUJO * factor_escala)))
+        t_dib.dxf.color = 4
+        
+        t_rev = msp.add_text(datos["Revisó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_rev.set_placement((insert_x + (COORD_X_CAJETIN_REVISO * factor_escala), insert_y + (COORD_Y_CAJETIN_REVISO * factor_escala)))
+        t_rev.dxf.color = 30
+        
+        t_num = msp.add_text(numero_diag, height=TAMANO_TEXTO_NUMERO * factor_escala)
+        t_num.set_placement((insert_x + (COORD_X_CAJETIN_NUMERO * factor_escala), insert_y + (COORD_Y_CAJETIN_NUMERO * factor_escala)))
+        t_num.dxf.color = 1
+
+        return doc, f"{numero_diag} {nombre_oficial}.dxf"
+
+    # --- LÓGICA ESTÁNDAR UPS / CFR / AMCR ---
+    indices_tabla = obtener_indices_tabla(datos)
+    
+    # --- RENDERIZADO RÁPIDO PARA FILTROS ACTIVOS (ESTÁTICO) ---
+    if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
+        registrar_bloque(doc, "filtro_activo.dxf", "BLK_FILTRO_ACTIVO")
+        msp.add_blockref("BLK_FILTRO_ACTIVO", insert=(0, 0))
+
+        # Cuadro de límites para ajustar el marco automáticamente
+        x_min, x_max, y_min, y_max = -120, 120, -180, 50
+        ancho_dibujo, alto_dibujo = x_max - x_min, y_max - y_min
+        centro_x_dibujo, centro_y_dibujo = (x_max + x_min) / 2, (y_max + y_min) / 2
+        
+        area_util_ancho, area_util_alto = 387.89, 377.07
+        factor_escala = max(1.0, max(ancho_dibujo / area_util_ancho, alto_dibujo / area_util_alto) * FACTOR_HOLGURA_MARCO)
+        
+        cx_area_util_bloque = 154.14 + (area_util_ancho / 2)
+        cy_area_util_bloque = 54.93 + (area_util_alto / 2)
+        insert_x = centro_x_dibujo - (cx_area_util_bloque * factor_escala)
+        insert_y = centro_y_dibujo - (cy_area_util_bloque * factor_escala)
+        
+        msp.add_blockref("BLK_MARCO", insert=(insert_x, insert_y), dxfattribs={'xscale': factor_escala, 'yscale': factor_escala, 'zscale': factor_escala})
+
+        # Renderizar Tabla de Datos
+        secciones = generar_secciones_tabla(datos, 0, 1, 0)
+        x_tabla_base = insert_x + (COORD_X_INICIO_TABLA * factor_escala)
+        y_tabla_base = insert_y + (COORD_Y_INICIO_TABLA * factor_escala)
+        w_tot, w_c1 = TABLA_ANCHO_TOTAL * factor_escala, TABLA_ANCHO_COL_1 * factor_escala
+        h_ren, t_size = TABLA_ALTO_RENGLON * factor_escala, TABLA_TAMANO_TEXTO * factor_escala
+        
+        y_curr = y_tabla_base
+        msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
+        for sec in secciones:
+            y_sec_start = y_curr
+            for linea in sec["lineas"]:
+                msp.add_text(linea, height=t_size).set_placement((x_tabla_base + w_c1 + (2*factor_escala), y_curr - (h_ren*0.8)))
+                y_curr -= h_ren
+                msp.add_line((x_tabla_base + w_c1, y_curr), (x_tabla_base + w_tot, y_curr))
+            msp.add_text(str(sec["num"]), height=t_size*1.3).set_placement((x_tabla_base + (w_c1/2), ((y_sec_start + y_curr)/2) - (t_size*0.65)), align=TextEntityAlignment.CENTER)
+            msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
+            
+        msp.add_line((x_tabla_base, y_tabla_base), (x_tabla_base, y_curr))
+        msp.add_line((x_tabla_base + w_c1, y_tabla_base), (x_tabla_base + w_c1, y_curr))
+        msp.add_line((x_tabla_base + w_tot, y_tabla_base), (x_tabla_base + w_tot, y_curr))
+
+        # Cajetín de Firmas y Título
+        fecha_actual = datetime.now().strftime("%m/%y")
+        nombre_oficial = generar_nombre_base(datos)
+        numero_diag = datos.get("Numero Diagrama", "000000")
+        
+        t_nom = msp.add_text(nombre_oficial, height=2.0 * factor_escala)
+        t_nom.set_placement((insert_x + (COORD_X_CAJETIN_NOMBRE * factor_escala), insert_y + (COORD_Y_CAJETIN_NOMBRE * factor_escala)))
+        t_nom.dxf.color = 6
+        
+        t_dib = msp.add_text(datos["Dibujó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_dib.set_placement((insert_x + (COORD_X_CAJETIN_DIBUJO * factor_escala), insert_y + (COORD_Y_CAJETIN_DIBUJO * factor_escala)))
+        t_dib.dxf.color = 4
+        
+        t_rev = msp.add_text(datos["Revisó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_rev.set_placement((insert_x + (COORD_X_CAJETIN_REVISO * factor_escala), insert_y + (COORD_Y_CAJETIN_REVISO * factor_escala)))
+        t_rev.dxf.color = 30
+        
+        t_num = msp.add_text(numero_diag, height=TAMANO_TEXTO_NUMERO * factor_escala)
+        t_num.set_placement((insert_x + (COORD_X_CAJETIN_NUMERO * factor_escala), insert_y + (COORD_Y_CAJETIN_NUMERO * factor_escala)))
+        t_num.dxf.color = 1
+
+        return doc, f"{numero_diag} {nombre_oficial}.dxf"
+
+    # --- LÓGICA ESTÁNDAR UPS / CFR / AMCR ---
     indices_tabla = obtener_indices_tabla(datos)
     
     def dibujar_globo(x, y, clave):
@@ -1070,38 +1599,58 @@ col1, col2, col3, col4 = st.columns(4)
 with col1:
     with st.container(border=True):
         st.markdown('<div class="tarjeta-base color-equipo">⚡ Equipo Principal</div>', unsafe_allow_html=True)
-        tipo_equipo = st.radio("Tipo de Equipo:", ["UPS", "CFR", "AMCR"], horizontal=True)
+        tipo_equipo = st.radio("Tipo de Equipo:", ["UPS", "CFR", "AMCR", "FAA", "CR FA"], horizontal=True)
+        
+        # --- VOLTAJES EXCLUSIVOS PARA FILTROS (FORMATO ESTRELLA/DELTA) ---
+        voltajes_l = ["120/208V", "127/220V", "139/240V"]
+        voltajes_h = ["230/400V", "254/440V", "265/460V", "277/480V"]
         
         if tipo_equipo == "UPS":
             capacidad = st.selectbox("Capacidad UPS:", CAPACIDADES_UPS)
             familia = st.selectbox("Familia UPS:", ["M1", "N1", "R1", "MR1", "Ninguna"])
-            opciones_v_amcr = TODOS_LOS_VOLTAJES
+            opciones_v = TODOS_LOS_VOLTAJES
         elif tipo_equipo == "CFR":
             capacidad = st.selectbox("Capacidad CFR:", CAPACIDADES_CFR)
             familia = "Ninguna"
-            opciones_v_amcr = TODOS_LOS_VOLTAJES
-        else:
+            opciones_v = TODOS_LOS_VOLTAJES
+        elif tipo_equipo == "AMCR":
             capacidad = st.selectbox("Capacidad AMCR:", CAPACIDADES_AMCR)
             familia = "Ninguna"
             cap_num = int(capacidad.replace(" KVA", ""))
-            if cap_num >= 400: opciones_v_amcr = [v for v in TODOS_LOS_VOLTAJES if "254" in v or "265" in v or "266" in v or "277" in v or "440" in v or "460" in v or "480" in v]
-            else: opciones_v_amcr = TODOS_LOS_VOLTAJES
-            
-        voltaje_in = st.selectbox("Voltaje de entrada del Equipo:", opciones_v_amcr)
-        voltaje_out = st.selectbox("Voltaje de salida del Equipo:", opciones_v_amcr)
+            opciones_v = voltajes_h if cap_num >= 400 else TODOS_LOS_VOLTAJES
+        elif tipo_equipo == "FAA":
+            familia = "Ninguna"
+            capacidad = st.selectbox("Capacidad FAA (Amp):", sorted(list(set(CAPACIDADES_FAA_L + CAPACIDADES_FAA_H)), key=int))
+            if capacidad in CAPACIDADES_FAA_L and capacidad not in CAPACIDADES_FAA_H: opciones_v = voltajes_l
+            elif capacidad in CAPACIDADES_FAA_H and capacidad not in CAPACIDADES_FAA_L: opciones_v = voltajes_h
+            else: opciones_v = TODOS_LOS_VOLTAJES
+        else:
+            familia = "Ninguna"
+            capacidad = st.selectbox("Capacidad CR FA (kVAR):", sorted(list(set(CAPACIDADES_CRFA_L + CAPACIDADES_CRFA_H)), key=int))
+            if capacidad in CAPACIDADES_CRFA_L and capacidad not in CAPACIDADES_CRFA_H: opciones_v = voltajes_l
+            elif capacidad in CAPACIDADES_CRFA_H and capacidad not in CAPACIDADES_CRFA_L: opciones_v = voltajes_h
+            else: opciones_v = TODOS_LOS_VOLTAJES
+
+        if tipo_equipo in ["FAA", "CR FA"]:
+            voltaje_in = st.selectbox("Voltaje de Conexión:", opciones_v)
+            voltaje_out = voltaje_in
+        else:
+            voltaje_in = st.selectbox("Voltaje de entrada del Equipo:", opciones_v)
+            voltaje_out = st.selectbox("Voltaje de salida del Equipo:", opciones_v)
 
 with col2:
     with st.container(border=True):
         st.markdown('<div class="tarjeta-base color-bateria">🔋 Baterías y Trafos</div>', unsafe_allow_html=True)
         
-        bat_index = 0 if tipo_equipo in ["CFR", "AMCR"] else 1
-        bat_disabled = True if tipo_equipo == "AMCR" else False
+        es_filtro = tipo_equipo in ["FAA", "CR FA"]
+        bat_index = 0 if tipo_equipo in ["CFR", "AMCR", "FAA", "CR FA"] else 1
+        bat_disabled = True if tipo_equipo in ["AMCR", "FAA", "CR FA"] else False
         bat_tipo = st.selectbox("Tipo de Batería:", ["Ninguna", "Plomo-ácido", "Litio"], index=bat_index, disabled=bat_disabled)
         bat_ubi = st.selectbox("Ubicación Batería:", ["Externo", "Interno"], disabled=bat_disabled)
         st.write("")
         
-        trafo_in = st.toggle("Incluir Transformador de Entrada")
-        if trafo_in:
+        trafo_in = st.toggle("Incluir Transformador de Entrada", disabled=es_filtro)
+        if trafo_in and not es_filtro:
             tipo_trafo_in = st.selectbox("Tipo de transformador:", ["AT (Autotransformador)", "TA (Transformador de Aislamiento)"], key="trafo_in_secreto")
             if tipo_equipo == "AMCR": voltaje_red = st.selectbox("Voltaje de Red (Entrada Trafo):", TODOS_LOS_VOLTAJES)
             else: voltaje_red = voltaje_in
@@ -1109,19 +1658,19 @@ with col2:
             tipo_trafo_in = "Ninguno"
             voltaje_red = voltaje_in
 
-        trafo_out = st.toggle("Incluir Transformador de Salida", disabled=True if tipo_equipo == "AMCR" else False)
-        if trafo_out: tipo_trafo_out = st.selectbox("Tipo de transformador:", ["AT (Autotransformador)", "TA (Transformador de Aislamiento)"], key="trafo_out_secreto")
+        trafo_out = st.toggle("Incluir Transformador de Salida", disabled=True if tipo_equipo in ["AMCR", "FAA", "CR FA"] else False)
+        if trafo_out and not es_filtro: tipo_trafo_out = st.selectbox("Tipo de transformador:", ["AT (Autotransformador)", "TA (Transformador de Aislamiento)"], key="trafo_out_secreto")
         else: tipo_trafo_out = "Ninguno"
 
         gabinete_trafo = "Separados" 
-        if trafo_in and trafo_out:
+        if trafo_in and trafo_out and not es_filtro:
             st.info("⚡ Doble transformador detectado")
             gabinete_trafo = st.radio("Configuración de gabinetes:", ["Gabinetes Separados", "Un Solo Gabinete"])
 
 with col3:
     with st.container(border=True):
         st.markdown('<div class="tarjeta-base color-extras">🔄 Topología y Extras</div>', unsafe_allow_html=True)
-        paralelo_disabled = True if tipo_equipo == "AMCR" else False
+        paralelo_disabled = True if tipo_equipo in ["AMCR", "FAA", "CR FA"] else False
         topologia = st.selectbox("Sistema Paralelo:", ["Unitario", "Paralelo Redundante", "Paralelo por Capacidad"], disabled=paralelo_disabled)
         
         if "Paralelo" in topologia and not paralelo_disabled:
@@ -1136,8 +1685,8 @@ with col3:
             voltaje_gabconx = voltaje_in
             voltaje_gabpar = voltaje_out
 
-        filtro = st.selectbox("Filtro de Armónicos:", ["Ninguno", "FAP", "FAPA"])
-        bpe = st.toggle("Incluir Bypass (BPE)", disabled=("Paralelo" in topologia and not paralelo_disabled))
+        filtro = st.selectbox("Filtro de Armónicos:", ["Ninguno", "FAP", "FAPA"], disabled=es_filtro)
+        bpe = st.toggle("Incluir Bypass (BPE)", disabled=(("Paralelo" in topologia and not paralelo_disabled) or es_filtro))
         
         spv = st.toggle("Incluir SPV")
         if spv: cap_spv = st.selectbox("Capacidad SPV:", ["50 kA", "100 kA", "200 kA", "400 kA", "530 kA"])
@@ -1147,7 +1696,7 @@ with col4:
     with st.container(border=True):
         st.markdown('<div class="tarjeta-base color-diseno">✍️ Diseño y Revisión</div>', unsafe_allow_html=True)
         numero_diagrama = st.text_input("No. de Diagrama:", value="000000", max_chars=6)
-        dibujo = st.selectbox("Dibujó:", ["AACR", "YGHG", "JCTF", "IMC", "Nuevo..."])
+        dibujo = st.selectbox("Dibujó:", ["AACR", "YGHG", "JCTF", "IMC", "MRE", "Nuevo..."])
         if dibujo == "Nuevo...": dibujo = st.text_input("Ingresa iniciales (Ej. ABC):", key="nuevo_dibujo")
 
         reviso = st.selectbox("Revisó:", ["JAAB", "Nuevo..."])
@@ -1193,7 +1742,46 @@ with st.container(border=True):
     sufijo_trafo_out = f" + Trafo {tipo_trafo_out.split(' ')[0]}" if trafo_out else ""
     sufijo_filtro = f" + Filtro {filtro}" if filtro != "Ninguno" else ""
 
-    if tipo_equipo == "AMCR":
+    if tipo_equipo == "FAA":
+        eng_f = calcular_ingenieria_filtros(capacidad, voltaje_in, tipo_equipo)
+        filas_resumen.append({
+            "tipo": "in_faa",
+            "titulo": f"🟢 Conexión de {tipo_equipo} (Fases) — Voltaje: {voltaje_in}",
+            "eng": eng_f,
+            "corriente_str": f"{eng_f['corriente_fase']} A",
+            "lbl_corriente": "Corriente de Fases (+25%)",
+            "lbl_fase": "Calibre Fases:",
+            "val_fase": eng_f['calibre_fase'], "val_hf": eng_f['hilos_fase'],
+            "pr": "PR_FILTRO", "cf": "CF_FILTRO", "ct": "CT_FILTRO", "hf": "HF_FILTRO", "ht": "HT_FILTRO",
+            "lleva_breaker": True, "mostrar_tierra": True
+        })
+        filas_resumen.append({
+            "tipo": "in_faa_n",
+            "titulo": f"⚪ Conexión de {tipo_equipo} (Neutro) — Corriente al doble que las Fases",
+            "eng": eng_f,
+            "corriente_str": f"{eng_f['corriente_neutro']} A",
+            "lbl_corriente": "Corriente de Neutro",
+            "lbl_fase": "Calibre Neutro:",
+            "val_fase": eng_f['calibre_neutro'], "val_hf": eng_f['hilos_neutro'],
+            "pr": "PR_FILTRO_N", "cf": "CN_FILTRO", "ct": "CT_FILTRO_N", "hf": "HN_FILTRO", "ht": "HT_FILTRO_N",
+            "lleva_breaker": False, "mostrar_tierra": False, "es_neutro": True
+        })
+    elif tipo_equipo == "CR FA":
+        eng_f = calcular_ingenieria_filtros(capacidad, voltaje_in, tipo_equipo)
+        filas_resumen.append({
+            "tipo": "in_crfa",
+            "titulo": f"🟢 Conexión de {tipo_equipo} — Voltaje: {voltaje_in}",
+            "eng": eng_f,
+            "corriente_str": f"{eng_f['corriente_fase']} A",
+            "lbl_corriente": "Corriente (+25%)",
+            "lbl_fase": "Calibre Fase/Neutro:",
+            "val_fase": eng_f['calibre_fase'], "val_hf": eng_f['hilos_fase'],
+            "pr": "PR_FILTRO", "cf": "CF_FILTRO", "ct": "CT_FILTRO", "hf": "HF_FILTRO", "ht": "HT_FILTRO",
+            "lleva_breaker": True, "mostrar_tierra": True
+        })
+        datos["CN_FILTRO"] = eng_f["calibre_neutro"]
+        datos["HN_FILTRO"] = eng_f["hilos_neutro"]
+    elif tipo_equipo == "AMCR":
         modelo_amcr_ui = f"AMCR 23{int(kva_u_front):02d}"
         
         if trafo_in:
@@ -1274,7 +1862,8 @@ with st.container(border=True):
         st.markdown(f"**{f['titulo']}**")
         c1, c2, c3_h, c3_c, c4_h, c4_c, c5 = st.columns([1.1, 1.1, 0.8, 1.8, 0.8, 1.8, 1])
         
-        lbl_corr = "Corriente entrada (25%)" if f['tipo'] == "in" and tipo_equipo == "UPS" else ("Corriente de entrada" if f['tipo'] == "in" else "Corriente de salida")
+        lbl_corr = f.get('lbl_corriente', "Corriente entrada (25%)" if f['tipo'] == "in" and tipo_equipo == "UPS" else ("Corriente de entrada" if f['tipo'] == "in" else "Corriente de salida"))
+        corriente_val = f.get('corriente_str', f"{f['eng']['corriente']} A")
         
         lleva_breaker = f.get('lleva_breaker', True)
         if 'lleva_breaker' not in f:
@@ -1285,7 +1874,7 @@ with st.container(border=True):
             st.markdown(f"""
             <div style='margin-bottom:5px;'>
                 <div style='font-size:14px; color:#a0aab2;'>{lbl_corr}</div>
-                <div style='font-size:24px; font-weight:bold; color:white;'>{f['eng']['corriente']} A</div>
+                <div style='font-size:24px; font-weight:bold; color:white;'>{corriente_val}</div>
             </div>""", unsafe_allow_html=True)
             
         with c2: 
@@ -1295,32 +1884,43 @@ with st.container(border=True):
                     <div style='font-size:14px; color:#a0aab2;'>Protección</div>
                     <div style='font-size:24px; font-weight:900; color:#FFD700;'>{f['eng']['proteccion']} A</div>
                 </div>""", unsafe_allow_html=True)
+            elif f.get('es_neutro'):
+                st.markdown("<div style='margin-bottom:5px;'><div style='font-size:14px; color:#a0aab2;'>Protección</div><div style='font-size:24px; font-weight:900; color:#777;'>N/A</div></div>", unsafe_allow_html=True)
             else:
-                st.markdown(f"""
-                <div style='margin-bottom:5px;'>
-                    <div style='font-size:14px; color:#a0aab2;'>Protección</div>
-                    <div style='font-size:24px; font-weight:900; color:#777;'>N/A</div>
-                </div>""", unsafe_allow_html=True)
+                st.markdown("<div style='margin-bottom:5px;'><div style='font-size:14px; color:#a0aab2;'>Protección</div><div style='font-size:24px; font-weight:900; color:#777;'>N/A</div></div>", unsafe_allow_html=True)
                 
-        idx_f = buscar_indice(TABLA_FASE_NEUTRO, f['eng']['calibre_fase'])
-        idx_t = buscar_indice(TABLA_TIERRA, f['eng']['tierra'])
+        lbl_fase = f.get('lbl_fase', "Calibre Fase/Neutro:")
+        val_fase_eng = f.get('val_fase', f['eng']['calibre_fase'])
+        val_hf_eng = f.get('val_hf', f['eng']['hilos_fase'])
+        idx_f = buscar_indice(TABLA_FASE_NEUTRO, val_fase_eng)
         
-        with c3_h: sel_hf = st.number_input("Hilos F:", min_value=1, max_value=99, value=f['eng']['hilos_fase'], key=f"hf_{f['cf']}_{firma_estado}")
+        idx_t = buscar_indice(TABLA_TIERRA, f['eng']['tierra'])
+        mostrar_tierra = f.get('mostrar_tierra', True)
+        
+        with c3_h: sel_hf = st.number_input("Hilos:", min_value=1, max_value=99, value=val_hf_eng, key=f"hf_{f['cf']}_{firma_estado}")
         with c3_c: 
-            sel_f = st.selectbox("Calibre Fase/Neutro:", options=opciones_fase_limpias, index=idx_f, key=f"cf_{f['cf']}_{firma_estado}")
+            sel_f = st.selectbox(lbl_fase, options=opciones_fase_limpias, index=idx_f, key=f"cf_{f['cf']}_{firma_estado}")
             amp_f_base = extraer_ampacidad(sel_f)
             capacidad_total_f = amp_f_base * sel_hf
             st.markdown(f"<div style='font-size:13px; color:#a0aab2; margin-top:-10px; text-align:right;'>⚡ Capacidad total: <b><span style='color:white;'>{capacidad_total_f} A</span></b></div>", unsafe_allow_html=True)
             
-        with c4_h: sel_ht = st.number_input("Hilos T:", min_value=1, max_value=99, value=f['eng']['hilos_tierra'], key=f"ht_{f['ct']}_{firma_estado}")
+        with c4_h: 
+            if mostrar_tierra:
+                sel_ht = st.number_input("Hilos T:", min_value=1, max_value=99, value=f['eng']['hilos_tierra'], key=f"ht_{f['ct']}_{firma_estado}")
+            else:
+                sel_ht = 0
         with c4_c: 
-            sel_t = st.selectbox("Calibre Tierra:", options=opciones_tierra_limpias, index=idx_t, key=f"ct_{f['ct']}_{firma_estado}")
-            amp_t_base = extraer_ampacidad(sel_t)
-            capacidad_total_t = amp_t_base * sel_ht
-            st.markdown(f"<div style='font-size:13px; color:#a0aab2; margin-top:-10px; text-align:right;'>⚡ Capacidad total: <b><span style='color:white;'>{capacidad_total_t} A</span></b></div>", unsafe_allow_html=True)
+            if mostrar_tierra:
+                sel_t = st.selectbox("Calibre Tierra:", options=opciones_tierra_limpias, index=idx_t, key=f"ct_{f['ct']}_{firma_estado}")
+                amp_t_base = extraer_ampacidad(sel_t)
+                capacidad_total_t = amp_t_base * sel_ht
+                st.markdown(f"<div style='font-size:13px; color:#a0aab2; margin-top:-10px; text-align:right;'>⚡ Capacidad total: <b><span style='color:white;'>{capacidad_total_t} A</span></b></div>", unsafe_allow_html=True)
+            else:
+                sel_t = "N/A"
         
-        cumple_f = capacidad_total_f > f['eng']['proteccion']
-        cumple_t = capacidad_total_t > f['eng']['proteccion']
+        proteccion_req = f['eng']['proteccion'] * 2 if f.get('es_neutro') else f['eng']['proteccion']
+        cumple_f = capacidad_total_f > proteccion_req
+        cumple_t = (capacidad_total_t > f['eng']['proteccion']) if mostrar_tierra else True
         
         if cumple_f and cumple_t: v_icon, v_color, v_text = "✅", "#38ef7d", "Seguro"
         else: v_icon, v_color, v_text = "❌", "#ff4b2b", "Riesgo"; hay_riesgo_global = True 
@@ -1334,7 +1934,7 @@ with st.container(border=True):
 
         datos[f['pr']] = f['eng']['proteccion'] if lleva_breaker else 0
         datos[f['cf']] = sel_f.split(" (")[0]
-        datos[f['ct']] = sel_t.split(" (")[0]
+        datos[f['ct']] = sel_t.split(" (")[0] if sel_t != "N/A" else "N/A"
         datos[f['hf']] = sel_hf
         datos[f['ht']] = sel_ht
         st.write("")
