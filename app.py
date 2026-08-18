@@ -890,6 +890,28 @@ def generar_diagrama_dxf(datos):
         t_num_top.dxf.color = 1
         t_num_top.dxf.rotation = 180
 
+        # --- NOTAS EXCLUSIVAS PARA FILTROS ACTIVOS ---
+        notas_filtros = [
+            "NOTAS:",
+            "1.-LOS DATOS DE CALIBRE DEL CABLE ES PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
+            "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
+            "2.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
+            "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
+            "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
+            "3.-DONAS DE CORRIENTE INCLUIDAS.",
+            "4.-COLOCAR DONAS DE CORRIENTE DE LADO DE LA CARGA, DE NO SER POSIBLE COLOCARSE",
+            "   DE LADO DE LA RED."
+        ]
+        
+        y_nota_actual = insert_y + (70.0 * factor_escala)
+        x_nota_actual = insert_x + (19.13 * factor_escala)
+        tamano_fuente_notas = 2.5 * factor_escala
+        interlineado_notas = 4.5 * factor_escala
+        
+        for linea in notas_filtros:
+            msp.add_text(linea, height=tamano_fuente_notas).set_placement((x_nota_actual, y_nota_actual))
+            y_nota_actual -= interlineado_notas
+
         return doc, f"{numero_diag} {nombre_oficial}.dxf"
 
     # --- LÓGICA ESTÁNDAR UPS / CFR / AMCR ---
