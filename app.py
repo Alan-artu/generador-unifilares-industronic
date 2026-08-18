@@ -800,6 +800,15 @@ def generar_diagrama_dxf(datos):
         registrar_bloque(doc, "filtro_activo.dxf", "BLK_FILTRO_ACTIVO")
         msp.add_blockref("BLK_FILTRO_ACTIVO", insert=(0, 0))
 
+        # --- TEXTO DE PROTECCIÓN DEL BREAKER ---
+        cap_val = datos["Capacidad"]
+        v_in = datos["Voltaje In"]
+        eng_f = calcular_ingenieria_filtros(cap_val, v_in, datos["Tipo Equipo"])
+        pr_filt = datos.get("PR_FILTRO", eng_f['proteccion'])
+        
+        # Colocamos el texto ligeramente a la derecha (X=6) y abajo (Y=-18) del origen
+        msp.add_text(f"PROT: 3x{pr_filt} A", height=4.5).set_placement((6, -18))
+
         # Cuadro de límites para ajustar el marco automáticamente
         x_min, x_max, y_min, y_max = -120, 120, -180, 50
         ancho_dibujo, alto_dibujo = x_max - x_min, y_max - y_min
