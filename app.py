@@ -807,7 +807,7 @@ def generar_diagrama_dxf(datos):
         pr_filt = datos.get("PR_FILTRO", eng_f['proteccion'])
         
         # Colocamos el texto ligeramente a la derecha (X=6) y abajo (Y=-18) del origen
-        msp.add_text(f"PROT: 3x{pr_filt} A", height=4.5).set_placement((6, -18))
+        msp.add_text(f"PROT: 3x{pr_filt} A", height=4.5).set_placement((6, -34.6))
 
         # Cuadro de límites para ajustar el marco automáticamente
         x_min, x_max, y_min, y_max = -120, 120, -180, 50
