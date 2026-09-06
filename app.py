@@ -25,7 +25,7 @@ TABLA_TIERRA = [
     ("500 KCMIL", 4000)
 ]
 
-VOLTAJES_ESTRELLA = ["110/190", "115/200", "120/208", "127/220", "220/380", "230/400", "254/440", "265/460", "266/460", "277/480"]
+VOLTAJES_ESTRELLA = ["110/190V", "115/200V", "120/208V", "127/220V", "139/240V", "220/380V", "230/400V", "254/440V", "265/460V", "266/460V", "277/480V"]
 VOLTAJES_DELTA = ["208D", "220D", "380D", "400D", "440D", "460D", "480D"]
 TODOS_LOS_VOLTAJES = VOLTAJES_ESTRELLA + VOLTAJES_DELTA
 
@@ -218,6 +218,38 @@ def calcular_ingenieria_filtros(capacidad_str, voltaje_str, tipo_eq):
         "hilos_tierra": num_conductores_tierra
     }
 
+def calcular_ingenieria_trafo_puro(kva_total, voltaje_str):
+    v_ll = float(voltaje_str.split("/")[-1].replace("D", "").replace("V", "").strip())
+    corriente = (kva_total * 1000) / (math.sqrt(3) * v_ll)
+    
+    # Protección al 100% redondeada a la decena superior
+    proteccion = math.ceil(corriente / 10) * 10
+    
+    num_conductores = math.ceil(corriente / 700) if corriente > 700 else 1
+    amp_por_hilo = proteccion / num_conductores
+    
+    calibre_fase = "500 KCMIL"
+    for awg, amp in TABLA_FASE_NEUTRO:
+        if amp > amp_por_hilo: 
+            calibre_fase = awg
+            break
+            
+    num_tierra = math.ceil(proteccion / 4000) if proteccion > 4000 else 1
+    amp_tierra = proteccion / num_tierra
+    
+    calibre_tierra = "500 KCMIL"
+    for awg, amp in TABLA_TIERRA:
+        if amp > amp_tierra:
+            calibre_tierra = awg
+            break
+            
+    return {
+        "corriente": round(corriente, 2), "proteccion": int(proteccion), 
+        "calibre_fase": calibre_fase, "hilos_fase": num_conductores, 
+        "calibre_neutro": calibre_fase, "hilos_neutro": num_conductores, 
+        "tierra": calibre_tierra, "hilos_tierra": num_tierra
+    }
+
 def obtener_modelo_filtro(tipo_filtro, kva):
     if tipo_filtro == "FAP":
         modelos = [30, 45, 50, 100, 150, 200, 300, 500]
@@ -232,6 +264,12 @@ def obtener_modelo_filtro(tipo_filtro, kva):
     return ""
 
 def generar_nombre_base(datos):
+    # --- NOMENCLATURA PARA TRANSFORMADORES PUROS ---
+    if datos["Tipo Equipo"] in ["TA", "AT"]:
+        cap_num = int(datos["Capacidad"].replace(" KVA", ""))
+        modelo = f"{datos['Tipo Equipo']}-30{cap_num:03d}"
+        return f"DIAGRAMA UNIFILAR {modelo} {cap_num} KVA VE {datos['Voltaje In']} VS {datos['Voltaje Out']}".replace("/", "-")
+
     # --- NOMENCLATURA PARA FILTROS ACTIVOS (FAA Y CR FA) ---
     if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
         cap_val = datos["Capacidad"]
@@ -297,7 +335,12 @@ def generar_nombre_base(datos):
     if "Litio" in datos["Tipo Batería"]: nombre += f" + BBIL-IND-HF-{prefijo}"
     elif datos["Tipo Batería"] == "Plomo-ácido": nombre += f" + BAT-IND-HF-{prefijo}"
     
-    if datos["Filtro"] != "Ninguno": nombre += f" + {obtener_modelo_filtro(datos['Filtro'], capacidad_num)}"
+    if datos["Filtro"] not in ["Ninguno", "FAA", "CR FA"]: 
+        nombre += f" + {obtener_modelo_filtro(datos['Filtro'], capacidad_num)}"
+    elif datos["Filtro"] in ["FAA", "CR FA"]:
+        cap_val = datos["Capacidad Filtro Acc"]
+        sufijo_f = "L" if any(v in voltaje_out_sistema for v in ["208", "220", "240", "120", "127"]) else "H"
+        nombre += f" + {datos['Filtro']}-IND {cap_val}-{sufijo_f}"
         
     # --- LÓGICA INTELIGENTE PARA LA CAPACIDAD DE GABINETES PARALELOS ---
     if "Paralelo" in datos["Topología"]:
@@ -345,9 +388,13 @@ def obtener_indices_tabla(datos):
     indices['UPS'] = contador; contador += 1
     if datos["Tipo Batería"] != "Ninguna": indices['BATERIAS'] = contador; contador += 1
     indices['SALIDA_UPS'] = contador; contador += 1
-    if datos["Filtro"] != "Ninguno":
+    if datos["Filtro"] in ["FAP", "FAPA"]:
         indices['FILTRO'] = contador; contador += 1
         indices['SALIDA_FILTRO'] = contador; contador += 1
+    elif datos["Filtro"] in ["FAA", "CR FA"]:
+        indices['ENTRADA_FILTRO_ACC'] = contador; contador += 1
+        indices['FILTRO_ACC'] = contador; contador += 1
+        indices['CARGA_ACC'] = contador; contador += 1
     if "Paralelo" in datos["Topología"]:
         indices['GABPAR'] = contador; contador += 1
         indices['SALIDA_GABPAR'] = contador; contador += 1
@@ -356,6 +403,50 @@ def obtener_indices_tabla(datos):
 def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
     secciones = []
     
+    # --- TABLA EXCLUSIVA PARA TRANSFORMADORES PUROS (TA Y AT) ---
+    if datos["Tipo Equipo"] in ["TA", "AT"]:
+        cap_num = int(datos["Capacidad"].replace(" KVA", ""))
+        modelo = f"{datos['Tipo Equipo']}-30{cap_num:03d}"
+        nombre_completo = "AUTOTRANSFORMADOR" if datos["Tipo Equipo"] == "AT" else "TRANSFORMADOR DE AISLAMIENTO"
+        v_in = datos["Voltaje In"]
+        v_out = datos["Voltaje Out"]
+        
+        eng_in = calcular_ingenieria_trafo_puro(cap_num, v_in)
+        eng_out = calcular_ingenieria_trafo_puro(cap_num, v_out)
+        
+        pr_in = datos.get("PR_TRAFO_IN", eng_in['proteccion'])
+        cf_in = datos.get("CF_TRAFO_IN", eng_in['calibre_fase'])
+        ct_in = datos.get("CT_TRAFO_IN", eng_in['tierra'])
+        hf_in = datos.get("HF_TRAFO_IN", eng_in['hilos_fase'])
+        ht_in = datos.get("HT_TRAFO_IN", eng_in['hilos_tierra'])
+        
+        pr_out = datos.get("PR_TRAFO_OUT", eng_out['proteccion'])
+        cf_out = datos.get("CF_TRAFO_OUT", eng_out['calibre_fase'])
+        ct_out = datos.get("CT_TRAFO_OUT", eng_out['tierra'])
+        hf_out = datos.get("HF_TRAFO_OUT", eng_out['hilos_fase'])
+        ht_out = datos.get("HT_TRAFO_OUT", eng_out['hilos_tierra'])
+        
+        # 1. Entrada
+        lineas_in = [
+            f"ENTRADA {modelo} {cap_num} KVA:", f"VOLTAJE: {v_in}", f"CORRIENTE: {eng_in['corriente']} AMP",
+            f"PROTECCIÓN: 3 X {pr_in}A", f"{hf_in * 3}-CABLES CAL. {cf_in} (1 X FASE)" if hf_in == 1 else f"{hf_in * 3}-CABLES CAL. {cf_in} ({hf_in} X FASE)"
+        ]
+        if datos.get("Conexion In", "Estrella") == "Estrella": lineas_in.append(f"{hf_in}-CABLE CAL. {cf_in} (NEUTRO)" if hf_in == 1 else f"{hf_in}-CABLES CAL. {cf_in} (NEUTRO)")
+        lineas_in.extend([f"{ht_in}-CABLE CAL. {ct_in} (TIERRA)" if ht_in == 1 else f"{ht_in}-CABLES CAL. {ct_in} (TIERRA)", "CABLES Y PROTECCIÓN SUMINISTRADO POR EL USUARIO"])
+        
+        # 2. Equipo
+        lineas_eq = [nombre_completo, f"MOD. {modelo} {cap_num} KVA 3F", "MARCA INDUSTRONIC", f"VE: {v_in}", f"VS: {v_out}"]
+        
+        # 3. Salida
+        lineas_out = [
+            f"SALIDA {modelo} {cap_num} KVA:", f"VOLTAJE: {v_out}", f"CORRIENTE: {eng_out['corriente']} AMP",
+            f"PROTECCIÓN: 3 X {pr_out}A", f"{hf_out * 3}-CABLES CAL. {cf_out} (1 X FASE)" if hf_out == 1 else f"{hf_out * 3}-CABLES CAL. {cf_out} ({hf_out} X FASE)"
+        ]
+        if datos.get("Conexion Out", "Estrella") == "Estrella": lineas_out.append(f"{hf_out}-CABLE CAL. {cf_out} (NEUTRO)" if hf_out == 1 else f"{hf_out}-CABLES CAL. {cf_out} (NEUTRO)")
+        lineas_out.extend([f"{ht_out}-CABLE CAL. {ct_out} (TIERRA)" if ht_out == 1 else f"{ht_out}-CABLES CAL. {ct_out} (TIERRA)", "CABLES Y PROTECCIÓN SUMINISTRADO POR EL USUARIO"])
+        
+        return [{"num": "1", "lineas": lineas_in}, {"num": "2", "lineas": lineas_eq}, {"num": "3", "lineas": lineas_out}]
+
     # --- TABLA DE 4 PUNTOS EXCLUSIVA PARA FAA Y CR FA ---
     if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
         cap_val = datos["Capacidad"]
@@ -637,30 +728,51 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
     secciones.append({"num": str(contador), "lineas": lineas_salida_ups})
     contador += 1
 
-    if datos["Filtro"] != "Ninguno":
+    if datos["Filtro"] in ["FAP", "FAPA"]:
         modelo_filtro = obtener_modelo_filtro(datos["Filtro"], kva_u)
         secciones.append({"num": str(contador), "lineas": [
             modelo_filtro, "MARCA INDUSTRONIC", f"{kva_u} KVA 3 FASES", f"VOLTAJE NOMINAL: {datos['Voltaje Out']} VCA",
             "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
         ]})
         contador += 1
-        es_salida_final_filtro = "Paralelo" not in datos["Topología"]
-        pr_filtro = eng['proteccion'] 
-        cf_filtro = eng['calibre_fase']
-        ct_filtro = eng['tierra']
-        hf_filtro = eng['hilos_fase']
-        ht_filtro = eng['hilos_tierra']
-
-        lineas_salida_filtro = [f"SALIDA {modelo_filtro}", f"VOLTAJE: {datos['Voltaje Out']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE"]
-        if es_salida_final_filtro: lineas_salida_filtro.append(f"PROTECCIÓN = 3 X {pr_filtro} AMP")
-        lineas_salida_filtro.append(f"{hf_filtro * 3}-CABLES CAL. {cf_filtro} ({hf_filtro} X FASE)")
-        if "D" not in datos["Voltaje Out"]:
-            lineas_salida_filtro.append(f"{hf_filtro}-CABLES CAL. {cf_filtro} (NEUTRO)")
-        lineas_salida_filtro.extend([
-            f"{ht_filtro}-CABLE{'S' if ht_filtro > 1 else ''} CAL. {ct_filtro} (TIERRA)",
-            "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
-        ])
+        pr_filtro = eng['proteccion']; cf_filtro = eng['calibre_fase']; ct_filtro = eng['tierra']; hf_filtro = eng['hilos_fase']; ht_filtro = eng['hilos_tierra']
+        lineas_salida_filtro = [f"SALIDA {modelo_filtro}", f"VOLTAJE: {datos['Voltaje Out']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE", f"PROTECCIÓN = 3 X {pr_filtro} AMP", f"{hf_filtro * 3}-CABLES CAL. {cf_filtro} ({hf_filtro} X FASE)"]
+        if "D" not in datos["Voltaje Out"]: lineas_salida_filtro.append(f"{hf_filtro}-CABLES CAL. {cf_filtro} (NEUTRO)")
+        lineas_salida_filtro.extend([f"{ht_filtro}-CABLE{'S' if ht_filtro > 1 else ''} CAL. {ct_filtro} (TIERRA)", "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"])
         secciones.append({"num": str(contador), "lineas": lineas_salida_filtro})
+        contador += 1
+    elif datos["Filtro"] in ["FAA", "CR FA"]:
+        cap_val = datos["Capacidad Filtro Acc"]
+        v_out = datos["Voltaje Out"]
+        sufijo = "L" if any(v in v_out for v in ["208", "220", "240", "120", "127"]) else "H"
+        eng_f = calcular_ingenieria_filtros(cap_val, v_out, datos["Filtro"])
+        pr_filt = datos.get("PR_FILTRO_ACC", eng_f['proteccion']); cf_filt = datos.get("CF_FILTRO_ACC", eng_f['calibre_fase']); cn_filt = datos.get("CN_FILTRO_ACC", eng_f['calibre_neutro']); ct_filt = datos.get("CT_FILTRO_ACC", eng_f['tierra']); hf_filt = datos.get("HF_FILTRO_ACC", eng_f['hilos_fase']); hn_filt = datos.get("HN_FILTRO_ACC", eng_f['hilos_neutro']); ht_filt = datos.get("HT_FILTRO_ACC", eng_f['hilos_tierra'])
+
+        if datos["Filtro"] == "FAA":
+            modelo_f = f"FAA-IND {cap_val}-{sufijo}"
+            txt_comp = f"CORRIENTE DE COMPENSACIÓN MÁXIMA = {cap_val} AMP"
+            txt_eq = f"{cap_val} AMP 3 FASES"
+        else:
+            modelo_f = f"CR FA-IND {cap_val}-{sufijo}"
+            txt_comp = f"POTENCIA REACTIVA COMPENSACION MAXIMA = {cap_val} kVAR"
+            txt_eq = f"{cap_val} kVAR 3 FASES"
+
+        secciones.append({"num": str(contador), "lineas": [f"ENTRADA {modelo_f}", f"VOLTAJE: {v_out}", "CABLEADO FILTRO ACTIVO", txt_comp, f"PROTECCIÓN = 3 X {pr_filt} AMP", f"{hf_filt * 3}-CABLE CAL. {cf_filt} (1 X FASE)" if hf_filt == 1 else f"{hf_filt * 3}-CABLES CAL. {cf_filt} ({hf_filt} X FASE)", f"{hn_filt}-CABLE CAL. {cn_filt} (1 X NEUTRO)" if hn_filt == 1 else f"{hn_filt}-CABLES CAL. {cn_filt} ({hn_filt} X NEUTRO)", f"{ht_filt}-CABLE CAL. {ct_filt} (1 X TIERRA)" if ht_filt == 1 else f"{ht_filt}-CABLES CAL. {ct_filt} ({ht_filt} X TIERRA)", "CABLEADO SUMINISTRADO POR EL USUARIO"]})
+        contador += 1
+        secciones.append({"num": str(contador), "lineas": [modelo_f, "MARCA INDUSTRONIC", txt_eq, f"VOLTAJE NOMINAL: {v_out}"]})
+        contador += 1
+        
+       # Carga No Lineal Espejo
+        pr_espejo = pr_ups if pr_ups > 0 else calcular_ingenieria_pura(kva_u, v_out, False, datos["Tipo Equipo"])['proteccion']
+        
+        lineas_espejo = [
+            "CARGA NO LINEAL", 
+            f"VOLTAJE: {v_out}", 
+            f"PROTECCION: 3 X {pr_espejo} AMP", 
+            "CABLEADO SUMINISTRADO POR EL USUARIO"
+        ]
+        
+        secciones.append({"num": str(contador), "lineas": lineas_espejo})
         contador += 1
 
     if "Paralelo" in datos["Topología"]:
@@ -771,6 +883,7 @@ def generar_diagrama_dxf(datos):
     registrar_bloque(doc, "spv_industronic.dxf", "BLK_SPV")
     registrar_bloque(doc, "fap_industronic.dxf", "BLK_FAP")   
     registrar_bloque(doc, "fapa_industronic.dxf", "BLK_FAPA") 
+    registrar_bloque(doc, "filtro_activo_accesorio.dxf", "BLK_FILTRO_ACC")
     registrar_bloque(doc, "ups_industronic.dxf", "BLK_UPS")
     registrar_bloque(doc, "cfr_industronic.dxf", "BLK_CFR")
     registrar_bloque(doc, "amcr_industronic.dxf", "BLK_AMCR")
@@ -795,19 +908,37 @@ def generar_diagrama_dxf(datos):
         registrar_bloque(doc, f"trafo_directa_{i}_at.dxf", f"BLK_TRAFO_DIRECTA_{i}_AT")
         registrar_bloque(doc, f"trafo_directa_{i}_ta.dxf", f"BLK_TRAFO_DIRECTA_{i}_TA")
 
-    # --- RENDERIZADO RÁPIDO PARA FILTROS ACTIVOS (ESTÁTICO) ---
-    if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
-        registrar_bloque(doc, "filtro_activo.dxf", "BLK_FILTRO_ACTIVO")
-        msp.add_blockref("BLK_FILTRO_ACTIVO", insert=(0, 0))
+    # --- RENDERIZADO RÁPIDO PARA EQUIPOS INDEPENDIENTES (ESTÁTICO) ---
+    if datos["Tipo Equipo"] in ["FAA", "CR FA", "TA", "AT"]:
+        if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
+            registrar_bloque(doc, "filtro_activo.dxf", "BLK_ESTATICO")
+            msp.add_blockref("BLK_ESTATICO", insert=(0, 0))
+        else:
+            nombre_bloque_dxf = "diagrama_ta.dxf" if datos["Tipo Equipo"] == "TA" else "diagrama_at.dxf"
+            registrar_bloque(doc, nombre_bloque_dxf, "BLK_ESTATICO")
+            
+            # 👇 AQUÍ PUEDES MOVER TU BLOQUE TA/AT (X, Y)
+            # Positivos en X mueven a la derecha, negativos a la izquierda.
+            # Positivos en Y mueven hacia arriba, negativos hacia abajo.
+            msp.add_blockref("BLK_ESTATICO", insert=(23.81, 62)) 
 
-        # --- TEXTO DE PROTECCIÓN DEL BREAKER ---
-        cap_val = datos["Capacidad"]
-        v_in = datos["Voltaje In"]
-        eng_f = calcular_ingenieria_filtros(cap_val, v_in, datos["Tipo Equipo"])
-        pr_filt = datos.get("PR_FILTRO", eng_f['proteccion'])
-        
-        # Colocamos el texto ligeramente a la derecha (X=6) y abajo (Y=-18) del origen
-        msp.add_text(f"PROT: 3x{pr_filt} A", height=4.5).set_placement((6, -34.6))
+        if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
+            cap_val = datos["Capacidad"]
+            v_in = datos["Voltaje In"]
+            eng_f = calcular_ingenieria_filtros(cap_val, v_in, datos["Tipo Equipo"])
+            pr_filt = datos.get("PR_FILTRO", eng_f['proteccion'])
+            msp.add_text(f"PROT: 3x{pr_filt} A", height=4.5).set_placement((6, -18))
+        else:
+            cap_num = int(datos["Capacidad"].replace(" KVA", ""))
+            eng_in = calcular_ingenieria_trafo_puro(cap_num, datos["Voltaje In"])
+            eng_out = calcular_ingenieria_trafo_puro(cap_num, datos["Voltaje Out"])
+            pr_in = datos.get("PR_TRAFO_IN", eng_in['proteccion'])
+            pr_out = datos.get("PR_TRAFO_OUT", eng_out['proteccion'])
+            
+            # Textos de protección de entrada (Arriba) y salida (Abajo).
+            # (X, Y) -> X positivo es a la derecha. Y negativo es hacia abajo.
+            msp.add_text(f"PROT: 3x{pr_in}A", height=4.5).set_placement((34, 12.36))   # Breaker de Entrada (arriba)
+            msp.add_text(f"PROT: 3x{pr_out}A", height=4.5).set_placement((34, -159.5)) # Breaker de Salida (abajo)
 
         # Cuadro de límites para ajustar el marco automáticamente
         x_min, x_max, y_min, y_max = -120, 120, -180, 50
@@ -890,27 +1021,46 @@ def generar_diagrama_dxf(datos):
         t_num_top.dxf.color = 1
         t_num_top.dxf.rotation = 180
 
-        # --- NOTAS EXCLUSIVAS PARA FILTROS ACTIVOS ---
-        notas_filtros = [
-            "NOTAS:",
-            "1.-LOS DATOS DE CALIBRE DEL CABLE ES PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
-            "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
-            "2.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
-            "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
-            "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
-            "3.-DONAS DE CORRIENTE NO INCLUIDAS.",
-            "4.-COLOCAR DONAS DE CORRIENTE DE LADO DE LA CARGA, DE NO SER POSIBLE COLOCARSE",
-            "   DE LADO DE LA RED."
-        ]
-        
         y_nota_actual = insert_y + (70.0 * factor_escala)
         x_nota_actual = insert_x + (19.13 * factor_escala)
         tamano_fuente_notas = 2.5 * factor_escala
         interlineado_notas = 4.5 * factor_escala
-        
-        for linea in notas_filtros:
-            msp.add_text(linea, height=tamano_fuente_notas).set_placement((x_nota_actual, y_nota_actual))
-            y_nota_actual -= interlineado_notas
+
+        if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
+            # --- NOTAS EXCLUSIVAS PARA FILTROS ACTIVOS ---
+            notas = [
+                "NOTAS:",
+                "1.-LOS DATOS DE CALIBRE DEL CABLE ES PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
+                "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
+                "2.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
+                "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
+                "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
+                "3.-DONAS DE CORRIENTE INCLUIDAS.",
+                "4.-COLOCAR DONAS DE CORRIENTE DE LADO DE LA CARGA, DE NO SER POSIBLE COLOCARSE",
+                "   DE LADO DE LA RED."
+            ]
+            for linea in notas:
+                msp.add_text(linea, height=tamano_fuente_notas).set_placement((x_nota_actual, y_nota_actual))
+                y_nota_actual -= interlineado_notas
+        else:
+            # --- NOTAS EXCLUSIVAS PARA TRAFOS PUROS ---
+            notas = [
+                "PRECAUCION:",
+                "VERIFIQUE QUE LA CONEXION DE NEUTRO SEA CORRECTA Y QUE ESTE REFERENCIADA A TIERRA EN LA ACOMETIDA O LA SUBESTACION.",
+                "SI NO SE CONECTA ADECUADAMENTE PUEDE CAUSAR DAÑOS AL EQUIPO O A LA CARGA.",
+                "",
+                "NOTAS:",
+                "1.-LOS DATOS DE CALIBRE DEL CABLE ES PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
+                "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
+                "2.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
+                "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
+                "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
+                "3.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MAS GRANDE, DEBERAN AJUSTARSE AL",
+                "   VALOR MAS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR."
+            ]
+            for linea in notas:
+                msp.add_text(linea, height=tamano_fuente_notas).set_placement((x_nota_actual, y_nota_actual))
+                y_nota_actual -= interlineado_notas
 
         return doc, f"{numero_diag} {nombre_oficial}.dxf"
 
@@ -1410,11 +1560,28 @@ def generar_diagrama_dxf(datos):
         coord_y_chasis = y + OFFSET_Y_CHASIS 
         msp.add_blockref("BLK_CHASIS", insert=(coord_x_chasis, coord_y_chasis))
 
-    if datos["Filtro"] != "Ninguno":
+    if datos["Filtro"] in ["FAP", "FAPA"]:
         bloque_filtro = "BLK_FAP" if datos["Filtro"] == "FAP" else "BLK_FAPA"
         msp.add_blockref(bloque_filtro, insert=(x_c, y))
         dibujar_globo(x_c + OFFSET_GLOBO_FILTRO[0], y + OFFSET_GLOBO_FILTRO[1], 'FILTRO') 
         y -= ALTO_FAP
+    elif datos["Filtro"] in ["FAA", "CR FA"]:
+        msp.add_blockref("BLK_FILTRO_ACC", insert=(x_c, y))
+        # Extraemos protección para inyectarla en el breaker lateral del bloque
+        cap_val = datos["Capacidad Filtro Acc"]
+        eng_f = calcular_ingenieria_filtros(cap_val, datos["Voltaje Out"], datos["Filtro"])
+        pr_filt = datos.get("PR_FILTRO_ACC", eng_f['proteccion'])
+        
+        # Coordenadas ajustadas para el filtro activo (X negativo es a la izquierda)
+        msp.add_text(f"3x{pr_filt}A", height=3.5).set_placement((x_c - 35, y - 22)) # Texto debajo del interruptor
+        
+        dibujar_globo(x_c - 8.38, y + 6.1, 'ENTRADA_FILTRO_ACC')  # Globo 5 (Arriba de la línea horizontal)
+        dibujar_globo(x_c - 115, y - 1.54, 'FILTRO_ACC')        # Globo 6 (A la izquierda del bloque)
+
+        # Globo 7 (Carga No Lineal)
+        dibujar_globo(x_c, y - 117.28, 'CARGA_ACC')
+        
+        y -= 50 # Ajusta esta altura si tu bloque filtro_activo_accesorio.dxf es más alto
         
     msp.add_line((x_c, y), (x_c, y - CABLE_SALIDA))
     y -= CABLE_SALIDA
@@ -1485,9 +1652,13 @@ def generar_diagrama_dxf(datos):
 
    # --- SISTEMA INTELIGENTE DE NOTAS (CASO A y CASO B) ---
     # 1. Seleccionamos las notas correctas según el equipo
-    if datos["Tipo Equipo"] == "UPS": notas_seleccionadas = notas_ups
-    elif datos["Tipo Equipo"] == "CFR": notas_seleccionadas = notas_cfr
-    else: notas_seleccionadas = notas_amcr
+    if datos["Tipo Equipo"] == "UPS": notas_seleccionadas = notas_ups.copy()
+    elif datos["Tipo Equipo"] == "CFR": notas_seleccionadas = notas_cfr.copy()
+    else: notas_seleccionadas = notas_amcr.copy()
+
+    # Inyectar regla de donas si lleva Filtro Activo o CR FA como accesorio
+    if datos.get("Filtro") in ["FAA", "CR FA"]:
+        notas_seleccionadas.append("6.-DONAS DE CORRIENTE NO INCLUIDAS.")
 
     # 2. Parámetros base y Variables de Control
     TAMANO_TEXTO_NOTAS = 2.5
@@ -1630,52 +1801,67 @@ col1, col2, col3, col4 = st.columns(4)
 with col1:
     with st.container(border=True):
         st.markdown('<div class="tarjeta-base color-equipo">⚡ Equipo Principal</div>', unsafe_allow_html=True)
-        tipo_equipo = st.radio("Tipo de Equipo:", ["UPS", "CFR", "AMCR", "FAA", "CR FA"], horizontal=True)
+        tipo_equipo = st.radio("Tipo de Equipo:", ["UPS", "CFR", "AMCR", "FAA", "CR FA", "TA", "AT"], horizontal=True)
         
-        # --- VOLTAJES EXCLUSIVOS PARA FILTROS (FORMATO ESTRELLA/DELTA) ---
         voltajes_l = ["120/208V", "127/220V", "139/240V"]
         voltajes_h = ["230/400V", "254/440V", "265/460V", "277/480V"]
         
-        if tipo_equipo == "UPS":
-            capacidad = st.selectbox("Capacidad UPS:", CAPACIDADES_UPS)
-            familia = st.selectbox("Familia UPS:", ["M1", "N1", "R1", "MR1", "Ninguna"])
-            opciones_v = TODOS_LOS_VOLTAJES
-        elif tipo_equipo == "CFR":
-            capacidad = st.selectbox("Capacidad CFR:", CAPACIDADES_CFR)
+        es_trafo_puro = tipo_equipo in ["TA", "AT"]
+        
+        if es_trafo_puro:
             familia = "Ninguna"
-            opciones_v = TODOS_LOS_VOLTAJES
-        elif tipo_equipo == "AMCR":
-            capacidad = st.selectbox("Capacidad AMCR:", CAPACIDADES_AMCR)
-            familia = "Ninguna"
-            cap_num = int(capacidad.replace(" KVA", ""))
-            opciones_v = voltajes_h if cap_num >= 400 else TODOS_LOS_VOLTAJES
-        elif tipo_equipo == "FAA":
-            familia = "Ninguna"
-            capacidad = st.selectbox("Capacidad FAA (Amp):", sorted(list(set(CAPACIDADES_FAA_L + CAPACIDADES_FAA_H)), key=int))
-            if capacidad in CAPACIDADES_FAA_L and capacidad not in CAPACIDADES_FAA_H: opciones_v = voltajes_l
-            elif capacidad in CAPACIDADES_FAA_H and capacidad not in CAPACIDADES_FAA_L: opciones_v = voltajes_h
-            else: opciones_v = TODOS_LOS_VOLTAJES
-        else:
-            familia = "Ninguna"
-            capacidad = st.selectbox("Capacidad CR FA (kVAR):", sorted(list(set(CAPACIDADES_CRFA_L + CAPACIDADES_CRFA_H)), key=int))
-            if capacidad in CAPACIDADES_CRFA_L and capacidad not in CAPACIDADES_CRFA_H: opciones_v = voltajes_l
-            elif capacidad in CAPACIDADES_CRFA_H and capacidad not in CAPACIDADES_CRFA_L: opciones_v = voltajes_h
-            else: opciones_v = TODOS_LOS_VOLTAJES
+            cap_input = st.number_input(f"Capacidad {tipo_equipo} (KVA):", min_value=1, max_value=2000, value=50)
+            capacidad = f"{cap_input} KVA"
+            
+            c_in1, c_in2 = st.columns(2)
+            with c_in1: conn_in = st.selectbox("Conexión Entrada:", ["Estrella", "Delta"])
+            with c_in2: voltaje_in = st.selectbox("Voltaje de Entrada:", VOLTAJES_ESTRELLA if conn_in == "Estrella" else VOLTAJES_DELTA)
+            
+            c_out1, c_out2 = st.columns(2)
+            with c_out1: conn_out = st.selectbox("Conexión Salida:", ["Estrella", "Delta"])
+            with c_out2: voltaje_out = st.selectbox("Voltaje de Salida:", VOLTAJES_ESTRELLA if conn_out == "Estrella" else VOLTAJES_DELTA)
 
-        if tipo_equipo in ["FAA", "CR FA"]:
-            voltaje_in = st.selectbox("Voltaje de Conexión:", opciones_v)
-            voltaje_out = voltaje_in
         else:
-            voltaje_in = st.selectbox("Voltaje de entrada del Equipo:", opciones_v)
-            voltaje_out = st.selectbox("Voltaje de salida del Equipo:", opciones_v)
+            if tipo_equipo == "UPS":
+                capacidad = st.selectbox("Capacidad UPS:", CAPACIDADES_UPS)
+                familia = st.selectbox("Familia UPS:", ["M1", "N1", "R1", "MR1", "Ninguna"])
+                opciones_v = TODOS_LOS_VOLTAJES
+            elif tipo_equipo == "CFR":
+                capacidad = st.selectbox("Capacidad CFR:", CAPACIDADES_CFR)
+                familia = "Ninguna"
+                opciones_v = TODOS_LOS_VOLTAJES
+            elif tipo_equipo == "AMCR":
+                capacidad = st.selectbox("Capacidad AMCR:", CAPACIDADES_AMCR)
+                familia = "Ninguna"
+                cap_num = int(capacidad.replace(" KVA", ""))
+                opciones_v = voltajes_h if cap_num >= 400 else TODOS_LOS_VOLTAJES
+            elif tipo_equipo == "FAA":
+                familia = "Ninguna"
+                capacidad = st.selectbox("Capacidad FAA (Amp):", sorted(list(set(CAPACIDADES_FAA_L + CAPACIDADES_FAA_H)), key=int))
+                if capacidad in CAPACIDADES_FAA_L and capacidad not in CAPACIDADES_FAA_H: opciones_v = voltajes_l
+                elif capacidad in CAPACIDADES_FAA_H and capacidad not in CAPACIDADES_FAA_L: opciones_v = voltajes_h
+                else: opciones_v = TODOS_LOS_VOLTAJES
+            else:
+                familia = "Ninguna"
+                capacidad = st.selectbox("Capacidad CR FA (kVAR):", sorted(list(set(CAPACIDADES_CRFA_L + CAPACIDADES_CRFA_H)), key=int))
+                if capacidad in CAPACIDADES_CRFA_L and capacidad not in CAPACIDADES_CRFA_H: opciones_v = voltajes_l
+                elif capacidad in CAPACIDADES_CRFA_H and capacidad not in CAPACIDADES_CRFA_L: opciones_v = voltajes_h
+                else: opciones_v = TODOS_LOS_VOLTAJES
+
+            if tipo_equipo in ["FAA", "CR FA"]:
+                voltaje_in = st.selectbox("Voltaje de Conexión:", opciones_v)
+                voltaje_out = voltaje_in
+            else:
+                voltaje_in = st.selectbox("Voltaje de entrada del Equipo:", opciones_v)
+                voltaje_out = st.selectbox("Voltaje de salida del Equipo:", opciones_v)
 
 with col2:
     with st.container(border=True):
         st.markdown('<div class="tarjeta-base color-bateria">🔋 Baterías y Trafos</div>', unsafe_allow_html=True)
         
-        es_filtro = tipo_equipo in ["FAA", "CR FA"]
-        bat_index = 0 if tipo_equipo in ["CFR", "AMCR", "FAA", "CR FA"] else 1
-        bat_disabled = True if tipo_equipo in ["AMCR", "FAA", "CR FA"] else False
+        es_filtro = tipo_equipo in ["FAA", "CR FA", "TA", "AT"]
+        bat_index = 0 if tipo_equipo in ["CFR", "AMCR", "FAA", "CR FA", "TA", "AT"] else 1
+        bat_disabled = True if tipo_equipo in ["AMCR", "FAA", "CR FA", "TA", "AT"] else False
         bat_tipo = st.selectbox("Tipo de Batería:", ["Ninguna", "Plomo-ácido", "Litio"], index=bat_index, disabled=bat_disabled)
         bat_ubi = st.selectbox("Ubicación Batería:", ["Externo", "Interno"], disabled=bat_disabled)
         st.write("")
@@ -1701,7 +1887,7 @@ with col2:
 with col3:
     with st.container(border=True):
         st.markdown('<div class="tarjeta-base color-extras">🔄 Topología y Extras</div>', unsafe_allow_html=True)
-        paralelo_disabled = True if tipo_equipo in ["AMCR", "FAA", "CR FA"] else False
+        paralelo_disabled = True if tipo_equipo in ["AMCR", "FAA", "CR FA", "TA", "AT"] else False
         topologia = st.selectbox("Sistema Paralelo:", ["Unitario", "Paralelo Redundante", "Paralelo por Capacidad"], disabled=paralelo_disabled)
         
         if "Paralelo" in topologia and not paralelo_disabled:
@@ -1716,7 +1902,13 @@ with col3:
             voltaje_gabconx = voltaje_in
             voltaje_gabpar = voltaje_out
 
-        filtro = st.selectbox("Filtro de Armónicos:", ["Ninguno", "FAP", "FAPA"], disabled=es_filtro)
+        filtro = st.selectbox("Filtro de Armónicos/Reactivos:", ["Ninguno", "FAP", "FAPA", "FAA", "CR FA"], disabled=es_filtro)
+        
+        if filtro in ["FAA", "CR FA"]:
+            if filtro == "FAA": cap_filtro_acc = st.selectbox("Capacidad FAA (Amp):", sorted(list(set(CAPACIDADES_FAA_L + CAPACIDADES_FAA_H)), key=int))
+            else: cap_filtro_acc = st.selectbox("Capacidad CR FA (kVAR):", sorted(list(set(CAPACIDADES_CRFA_L + CAPACIDADES_CRFA_H)), key=int))
+        else: cap_filtro_acc = "N/A"
+
         bpe = st.toggle("Incluir Bypass (BPE)", disabled=(("Paralelo" in topologia and not paralelo_disabled) or es_filtro))
         
         spv = st.toggle("Incluir SPV")
@@ -1736,6 +1928,8 @@ with col4:
 datos = {
     "Tipo Equipo": tipo_equipo,
     "Capacidad": capacidad, "Familia": familia if familia != "Ninguna" else "",
+    "Conexion In": conn_in if tipo_equipo in ["TA", "AT"] else "Estrella",
+    "Conexion Out": conn_out if tipo_equipo in ["TA", "AT"] else "Estrella",
     "Voltaje Red": voltaje_red, "Voltaje In": voltaje_in, "Voltaje Out": voltaje_out,
     "Trafo Entrada": tipo_trafo_in, "Trafo Salida": tipo_trafo_out,
     "Gabinete Doble Trafo": gabinete_trafo, "Topología": "Unitario" if tipo_equipo == "AMCR" else topologia, 
@@ -1744,7 +1938,8 @@ datos = {
     "Bypass Externo": "Sí" if bpe and ("Paralelo" not in topologia or paralelo_disabled) else "No",
     "Tipo Batería": bat_tipo, "Ubicación Batería": bat_ubi,
     "SPV": "Sí" if spv else "No", "Capacidad SPV": cap_spv, 
-    "Filtro": filtro, "Dibujó": dibujo, "Revisó": reviso,
+    "Filtro": filtro, "Capacidad Filtro Acc": cap_filtro_acc, 
+    "Dibujó": dibujo, "Revisó": reviso,
     "Numero Diagrama": numero_diagrama 
 }
 
@@ -1812,6 +2007,25 @@ with st.container(border=True):
         })
         datos["CN_FILTRO"] = eng_f["calibre_neutro"]
         datos["HN_FILTRO"] = eng_f["hilos_neutro"]
+    elif tipo_equipo in ["TA", "AT"]:
+        cap_num = int(capacidad.replace(" KVA", ""))
+        modelo_trafo_ui = f"{tipo_equipo}-30{cap_num:03d}"
+        
+        eng_in = calcular_ingenieria_trafo_puro(cap_num, voltaje_in)
+        filas_resumen.append({
+            "tipo": "in", "titulo": f"🟢 Entrada a {modelo_trafo_ui} — Voltaje: {voltaje_in}",
+            "eng": eng_in,
+            "pr": "PR_TRAFO_IN", "cf": "CF_TRAFO_IN", "ct": "CT_TRAFO_IN", "hf": "HF_TRAFO_IN", "ht": "HT_TRAFO_IN",
+            "lleva_breaker": True
+        })
+        
+        eng_out = calcular_ingenieria_trafo_puro(cap_num, voltaje_out)
+        filas_resumen.append({
+            "tipo": "out", "titulo": f"🟠 Salida de {modelo_trafo_ui} — Voltaje: {voltaje_out}",
+            "eng": eng_out,
+            "pr": "PR_TRAFO_OUT", "cf": "CF_TRAFO_OUT", "ct": "CT_TRAFO_OUT", "hf": "HF_TRAFO_OUT", "ht": "HT_TRAFO_OUT",
+            "lleva_breaker": True
+        })
     elif tipo_equipo == "AMCR":
         modelo_amcr_ui = f"AMCR 23{int(kva_u_front):02d}"
         
