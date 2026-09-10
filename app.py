@@ -643,7 +643,11 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
         ]})
         contador += 1
 
-    eng = calcular_ingenieria_pura(kva_u, datos["Voltaje In"], True, datos["Tipo Equipo"])
+    # Lógica inteligente para transformadores individuales (Voltaje y Título)
+    es_trafo_indiv = datos.get("Config Trafo In") == "Individual por UPS" and datos["Trafo Entrada"] != "Ninguno"
+    voltaje_in_real = datos["Voltaje GABCONX"] if es_trafo_indiv else datos["Voltaje In"]
+
+    eng = calcular_ingenieria_pura(kva_u, voltaje_in_real, True, datos["Tipo Equipo"])
     lleva_prot_entrada_ups = not ("Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí")
     pr_in_ups = datos.get("PR_UPS_IN", eng['proteccion']) if lleva_prot_entrada_ups else eng['proteccion']
     cf_in_ups = datos.get("CF_UPS_IN", eng['calibre_fase'])
@@ -652,13 +656,14 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
     ht_in_ups = datos.get("HT_UPS_IN", eng['hilos_tierra'])
 
     titulo_in = f"ENTRADA A {modelo_equipo}" if datos["Tipo Equipo"] == "CFR" else f"ENTRADA DE {modelo_equipo}"
-    if datos["Trafo Entrada"] != "Ninguno" and datos["Tipo Equipo"] == "CFR":
+    if datos["Trafo Entrada"] != "Ninguno" and datos["Tipo Equipo"] == "CFR" and not es_trafo_indiv:
         t_tipo = "AT" if "AT" in datos["Trafo Entrada"] else "TA"
         titulo_in += f" / {t_tipo}-30{int(kva_u)}:"
     else:
-        titulo_in += ":"
+        # Si es individual, ocultamos el sufijo del transformador para igualar el PDF
+        titulo_in += "" if es_trafo_indiv else ":"
 
-    lineas_entrada_ups = [titulo_in, f"VOLTAJE: {datos['Voltaje In']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE"]
+    lineas_entrada_ups = [titulo_in, f"VOLTAJE: {voltaje_in_real} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE"]
     if lleva_prot_entrada_ups: lineas_entrada_ups.append(f"PROTECCIÓN = 3 X {pr_in_ups} AMP")
     lineas_entrada_ups.append(f"{hf_in_ups * 3}-CABLES CAL. {cf_in_ups} ({hf_in_ups} X FASE)")
     if "D" not in datos["Voltaje In"]:
@@ -901,6 +906,8 @@ def generar_diagrama_dxf(datos):
     
     for i in range(2, 5):
         registrar_bloque(doc, f"gab_conexion_{i}.dxf", f"BLK_GAB_CONEXION_{i}")
+        registrar_bloque(doc, f"gabconx_{i}_ta_indiv.dxf", f"BLK_GABCONX_{i}_TA_INDIV")
+        registrar_bloque(doc, f"gabconx_{i}_at_indiv.dxf", f"BLK_GABCONX_{i}_AT_INDIV")
         registrar_bloque(doc, f"conexion_directa_{i}.dxf", f"BLK_CONEXION_DIRECTA_{i}")
         registrar_bloque(doc, f"gab_paralelo_{i}.dxf", f"BLK_GAB_PARALELO_{i}")
         registrar_bloque(doc, f"gab_paralelo_{i}_at.dxf", f"BLK_GAB_PARALELO_{i}_AT")
@@ -1467,7 +1474,10 @@ def generar_diagrama_dxf(datos):
         dibujar_globo(x_c + OFFSET_GLOBO_ENTRADA_PRINCIPAL[0], y + OFFSET_GLOBO_ENTRADA_PRINCIPAL[1], clave_entrada) 
 
         y -= ESPACIO_BREAKER_PRINCIPAL
-        if datos["Trafo Entrada"] != "Ninguno":
+        # Condición para NO dibujar el trafo central si se eligió individual
+        es_trafo_indiv_central = datos.get("Config Trafo In") == "Individual por UPS" and datos["Trafo Entrada"] != "Ninguno" and datos["GABCONX"] == "Sí"
+        
+        if datos["Trafo Entrada"] != "Ninguno" and not es_trafo_indiv_central:
             gabinete_trafo = datos.get("Gabinete Doble Trafo", "Separados")
             if gabinete_trafo == "Un Solo Gabinete": bloque_trafo = "BLK_TRAFO_AT_UNITARIO" if "AT" in datos["Trafo Entrada"] else "BLK_TRAFO_TA_UNITARIO"
             else: bloque_trafo = "BLK_TRAFO_AT" if "AT" in datos["Trafo Entrada"] else "BLK_TRAFO_TA"
@@ -1513,16 +1523,30 @@ def generar_diagrama_dxf(datos):
         y = y_nodo_bot
     else:
         if not es_sin_gabconx:
-            msp.add_blockref(f"BLK_GAB_CONEXION_{num_ups}", insert=(x_c, y))
-            dibujar_globo(x_c + OFFSET_GLOBO_GABCONX[0], y + OFFSET_GLOBO_GABCONX[1], 'GABCONX') 
-            y -= ALTO_GAB_CONEXION
+            # Inyección del nuevo bloque TODO EN UNO
+            if datos.get("Config Trafo In") == "Individual por UPS" and datos["Trafo Entrada"] != "Ninguno":
+                sufijo_t = "at" if "AT" in datos["Trafo Entrada"] else "ta"
+                msp.add_blockref(f"BLK_GABCONX_{num_ups}_{sufijo_t}_INDIV", insert=(x_c, y))
+                dibujar_globo(x_c + OFFSET_GLOBO_GABCONX[0], y + OFFSET_GLOBO_GABCONX[1], 'GABCONX') 
+                # Bajamos el ALTO normal + el espacio extra de los transformadores
+                y -= (ALTO_GAB_CONEXION + 68.84) 
+            else:
+                msp.add_blockref(f"BLK_GAB_CONEXION_{num_ups}", insert=(x_c, y))
+                dibujar_globo(x_c + OFFSET_GLOBO_GABCONX[0], y + OFFSET_GLOBO_GABCONX[1], 'GABCONX') 
+                y -= ALTO_GAB_CONEXION
             
         offset = -((num_ups - 1) * ESPACIO_PARALELO) / 2
         for i in range(num_ups):
             xi = x_c + offset + (i * ESPACIO_PARALELO)
             msp.add_blockref(bloque_principal, insert=(xi, y))
             if i == 0 and datos["GABCONX"] == "Sí":
-                dibujar_globo(xi + OFFSET_GLOBO_ENTRADA_UPS_PAR[0], y + OFFSET_GLOBO_ENTRADA_UPS_PAR[1], 'ENTRADA_UPS') 
+                # Condición inteligente para el Globo 3 (Entrada UPS)
+                if datos.get("Config Trafo In") == "Individual por UPS" and datos["Trafo Entrada"] != "Ninguno":
+                    # Coordenadas EXCLUSIVAS para trafos individuales (Más arriba y a la izquierda)
+                    dibujar_globo(xi - 15.0, y + 78.1, 'ENTRADA_UPS') 
+                else:
+                    # Coordenadas NORMALES para el resto de los diagramas
+                    dibujar_globo(xi + OFFSET_GLOBO_ENTRADA_UPS_PAR[0], y + OFFSET_GLOBO_ENTRADA_UPS_PAR[1], 'ENTRADA_UPS')
             dibujar_globo(xi + OFFSET_GLOBO_UPS[0], y + OFFSET_GLOBO_UPS[1], 'UPS') 
             
             if datos["Tipo Batería"] != "Ninguna":
@@ -1893,14 +1917,22 @@ with col3:
         if "Paralelo" in topologia and not paralelo_disabled:
             cantidad_ups = st.selectbox(f"Cantidad {tipo_equipo}:", ["2", "3", "4"])
             gabconx = st.toggle("GABCONX Entrada", value=True)
-            if gabconx: voltaje_gabconx = st.selectbox("Voltaje GABCONX:", TODOS_LOS_VOLTAJES)
-            else: voltaje_gabconx = voltaje_in
+            if gabconx: 
+                voltaje_gabconx = st.selectbox("Voltaje GABCONX:", TODOS_LOS_VOLTAJES)
+                if trafo_in:
+                    config_trafo_in = st.selectbox("Configuración del Transformador:", ["Capacidad total del sistema", "Individual por UPS"])
+                else:
+                    config_trafo_in = "Capacidad total del sistema"
+            else: 
+                voltaje_gabconx = voltaje_in
+                config_trafo_in = "Capacidad total del sistema"
             voltaje_gabpar = st.selectbox("Voltaje GABPAR:", TODOS_LOS_VOLTAJES)
         else:
             cantidad_ups = "1"
             gabconx = False
             voltaje_gabconx = voltaje_in
             voltaje_gabpar = voltaje_out
+            config_trafo_in = "Capacidad total del sistema"
 
         filtro = st.selectbox("Filtro de Armónicos/Reactivos:", ["Ninguno", "FAP", "FAPA", "FAA", "CR FA"], disabled=es_filtro)
         
@@ -1937,6 +1969,7 @@ datos = {
     "Voltaje GABCONX": voltaje_gabconx, "Voltaje GABPAR": voltaje_gabpar,
     "Bypass Externo": "Sí" if bpe and ("Paralelo" not in topologia or paralelo_disabled) else "No",
     "Tipo Batería": bat_tipo, "Ubicación Batería": bat_ubi,
+    "Config Trafo In": config_trafo_in,
     "SPV": "Sí" if spv else "No", "Capacidad SPV": cap_spv, 
     "Filtro": filtro, "Capacidad Filtro Acc": cap_filtro_acc, 
     "Dibujó": dibujo, "Revisó": reviso,
