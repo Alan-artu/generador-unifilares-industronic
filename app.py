@@ -17,19 +17,35 @@ TABLA_FASE_NEUTRO = [
     ("400 KCMIL", 615), ("500 KCMIL", 700)
 ]
 
-TABLA_TIERRA = [
-    ("14 AWG", 15), ("12 AWG", 20), ("10 AWG", 60), ("8 AWG", 100),
-    ("6 AWG", 200), ("4 AWG", 300), ("2 AWG", 500), ("1/0 AWG", 800),
-    ("2/0 AWG", 1000), ("3/0 AWG", 1200), ("4/0 AWG", 1600),
-    ("250 KCMIL", 2000), ("350 KCMIL", 2500), ("400 KCMIL", 3000),
-    ("500 KCMIL", 4000)
+# --- NUEVAS TABLAS 75°C PARA CÁLCULO MULTIVOLTAJE ---
+TABLA_FASE_CHAROLA_75 = [
+    ("14 AWG", 20), ("12 AWG", 25), ("10 AWG", 35), ("8 AWG", 50),
+    ("6 AWG", 65), ("4 AWG", 85), ("2 AWG", 115),
+    ("1/0 AWG", 150), ("2/0 AWG", 175), ("3/0 AWG", 200),
+    ("4/0 AWG", 230), ("250 KCMIL", 255), ("300 KCMIL", 285), 
+    ("350 KCMIL", 310), ("400 KCMIL", 335), ("500 KCMIL", 380)
 ]
 
+TABLA_FASE_LIBRE_75 = [
+    ("14 AWG", 30), ("12 AWG", 35), ("10 AWG", 50), ("8 AWG", 70),
+    ("6 AWG", 95), ("4 AWG", 125), ("2 AWG", 170),
+    ("1/0 AWG", 230), ("2/0 AWG", 265), ("3/0 AWG", 310),
+    ("4/0 AWG", 360), ("250 KCMIL", 405), ("300 KCMIL", 445), 
+    ("350 KCMIL", 505), ("400 KCMIL", 545), ("500 KCMIL", 620)
+]
+
+TABLA_TIERRA = [
+    ("14 AWG", 15), ("12 AWG", 20), ("10 AWG", 60), ("8 AWG", 100),
+    ("6 AWG", 200), ("4 AWG", 300), ("2 AWG", 500), 
+    ("1/0 AWG", 800), ("2/0 AWG", 1000), ("3/0 AWG", 1200), 
+    ("4/0 AWG", 1600), ("250 KCMIL", 2000), ("350 KCMIL", 2500), 
+    ("400 KCMIL", 3000), ("500 KCMIL", 9999)
+]
 VOLTAJES_ESTRELLA = ["110/190V", "115/200V", "120/208V", "127/220V", "139/240V", "220/380V", "230/400V", "254/440V", "265/460V", "266/460V", "277/480V"]
 VOLTAJES_DELTA = ["208D", "220D", "380D", "400D", "440D", "460D", "480D"]
 TODOS_LOS_VOLTAJES = VOLTAJES_ESTRELLA + VOLTAJES_DELTA
 
-CAPACIDADES_UPS = ["10 KVA", "15 KVA", "20 KVA", "30 KVA", "40 KVA", "50 KVA", "60 KVA", "80 KVA", "100 KVA", "120 KVA", "140 KVA", "150 KVA", "200 KVA", "250 KVA", "300 KVA", "400 KVA", "500 KVA", "600 KVA", "800 KVA", "1000 KVA"]
+CAPACIDADES_UPS = ["10 KVA", "15 KVA", "20 KVA", "30 KVA", "40 KVA", "50 KVA", "60 KVA", "80 KVA", "100 KVA", "120 KVA", "140 KVA", "150 KVA", "200 KVA", "250 KVA", "300 KVA", "400 KVA", "500 KVA", "600 KVA", "800 KVA", "1000 KVA", "1200 KVA"]
 CAPACIDADES_CFR = ["10 KVA", "15 KVA", "20 KVA", "30 KVA", "40 KVA", "60 KVA", "80 KVA", "100 KVA", "120 KVA", "160 KVA", "180 KVA", "200 KVA", "300 KVA", "400 KVA", "500 KVA", "600 KVA", "800 KVA", "1000 KVA"]
 CAPACIDADES_AMCR = ["6 KVA", "10 KVA", "15 KVA", "20 KVA", "30 KVA", "45 KVA", "60 KVA", "80 KVA", "100 KVA", "150 KVA", "200 KVA", "300 KVA", "400 KVA", "500 KVA", "800 KVA", "1000 KVA"]
 
@@ -100,6 +116,11 @@ SEPARACION_TRAFO_A_UPS = -70.0 # ----------
 OFFSET_X_CHASIS = 39.4691  
 OFFSET_Y_CHASIS = 14.16   
 
+# --- VARIABLE EXCLUSIVA PARA CENTRAR DIAGRAMAS MULTIVOLTAJE ---
+# Si el dibujo queda muy a la derecha, disminuye el valor (ej. -25, -30, -35).
+# Si queda muy a la izquierda, auméntalo hacia 0 (ej. -15, -10, 0).
+OFFSET_X_CENTRADO_MULTIVOLTAJE = -80.0
+
 # ==========================================
 #   AJUSTE MANUAL DE GLOBOS
 # ==========================================
@@ -120,33 +141,42 @@ OFFSET_GLOBO_SALIDA_FINAL      = (0, -40)
 # ==========================================
 #   MOTOR DE CÁLCULO DE INGENIERÍA MEJORADO
 # ==========================================
-def calcular_ingenieria_pura(kva_total, voltaje_str, es_entrada=False, tipo_eq="UPS"):
+def obtener_familia_voltajes(voltaje_str):
+    v_str = voltaje_str.upper()
+    es_delta = "D" in v_str
+    
+    # Familia Alta
+    if any(v in v_str for v in ["254", "440", "266", "460", "277", "480"]):
+        return ["440D", "460D", "480D"] if es_delta else ["254/440V", "266/460V", "277/480V"]
+    # Familia Media
+    elif any(v in v_str for v in ["220", "380", "230", "400"]):
+        return ["380D", "400D"] if es_delta else ["220/380V", "230/400V"]
+    # Familia Baja
+    elif any(v in v_str for v in ["115", "200", "120", "208", "127", "220", "139", "240"]):
+        return ["208D", "220D"] if es_delta else ["115/200V", "120/208V", "127/220V"]
+    
+    return [voltaje_str]
+
+def calcular_ingenieria_pura(kva_total, voltaje_str, es_entrada=False, tipo_eq="UPS", tipo_instalacion="Defecto"):
     v_ll = float(voltaje_str.split("/")[-1].replace("D", "").replace("V", "").strip())
     corriente = (kva_total * 1000) / (math.sqrt(3) * v_ll)
     
-    # SOLO el UPS lleva el 25% de sobredimensionamiento en la entrada
-    if es_entrada and tipo_eq == "UPS": 
-        corriente *= 1.25
-    
-    # Redondeo forzado a la decena superior
+    if es_entrada and tipo_eq == "UPS": corriente *= 1.25
     proteccion = math.ceil(corriente / 10) * 10
 
-    num_conductores = 1
-    if corriente > 700:
-        num_conductores = math.ceil(corriente / 700)
-        
+    tabla_fase = TABLA_FASE_CHAROLA_75 if tipo_instalacion == "Charola" else (TABLA_FASE_LIBRE_75 if tipo_instalacion == "Libre" else TABLA_FASE_NEUTRO)
+    max_amp = tabla_fase[-1][1]
+
+    num_conductores = math.ceil(proteccion / max_amp) if proteccion >= max_amp else 1
     proteccion_fase_por_hilo = proteccion / num_conductores
 
-    calibre_fase = "500 KCMIL"
-    for awg, amp in TABLA_FASE_NEUTRO:
+    calibre_fase = tabla_fase[-1][0]
+    for awg, amp in tabla_fase:
         if amp > proteccion_fase_por_hilo: 
             calibre_fase = awg
             break
             
-    num_conductores_tierra = 1
-    if proteccion > 4000:
-        num_conductores_tierra = math.ceil(proteccion / 4000)
-        
+    num_conductores_tierra = math.ceil(proteccion / 4000) if proteccion > 4000 else 1
     proteccion_tierra_por_hilo = proteccion / num_conductores_tierra
 
     calibre_tierra = "500 KCMIL"
@@ -155,44 +185,32 @@ def calcular_ingenieria_pura(kva_total, voltaje_str, es_entrada=False, tipo_eq="
             calibre_tierra = awg
             break
 
-    return {
-        "corriente": round(corriente, 2), 
-        "proteccion": int(proteccion), 
-        "calibre_fase": calibre_fase, 
-        "hilos_fase": num_conductores, 
-        "calibre_neutro": calibre_fase, 
-        "hilos_neutro": num_conductores, 
-        "tierra": calibre_tierra, 
-        "hilos_tierra": num_conductores_tierra, 
-        "kva_sistema": kva_total
-    }
+    return {"corriente": round(corriente, 2), "proteccion": int(proteccion), "calibre_fase": calibre_fase, "hilos_fase": num_conductores, "calibre_neutro": calibre_fase, "hilos_neutro": num_conductores, "tierra": calibre_tierra, "hilos_tierra": num_conductores_tierra, "kva_sistema": kva_total}
 
-def calcular_ingenieria_filtros(capacidad_str, voltaje_str, tipo_eq):
+def calcular_ingenieria_filtros(capacidad_str, voltaje_str, tipo_eq, tipo_instalacion="Defecto"):
     v_ll = float(voltaje_str.split("/")[-1].replace("D", "").replace("V", "").strip())
     capacidad_num = float(capacidad_str)
     
-    if tipo_eq == "CR FA":
-        corriente_base = (capacidad_num * 1000) / (math.sqrt(3) * v_ll)
-    else:
-        corriente_base = capacidad_num
-
+    corriente_base = (capacidad_num * 1000) / (math.sqrt(3) * v_ll) if tipo_eq == "CR FA" else capacidad_num
     corriente_fase = corriente_base * 1.25
     proteccion = math.ceil(corriente_fase / 10) * 10
-
     corriente_neutro = corriente_fase * 2 if tipo_eq == "FAA" else corriente_fase
 
-    num_conductores_fase = math.ceil(corriente_fase / 700) if corriente_fase > 700 else 1
+    tabla_fase = TABLA_FASE_CHAROLA_75 if tipo_instalacion == "Charola" else (TABLA_FASE_LIBRE_75 if tipo_instalacion == "Libre" else TABLA_FASE_NEUTRO)
+    max_amp = tabla_fase[-1][1]
+
+    num_conductores_fase = math.ceil(corriente_fase / max_amp) if corriente_fase >= max_amp else 1
     amp_por_hilo_fase = proteccion / num_conductores_fase
-    calibre_fase = "500 KCMIL"
-    for awg, amp in TABLA_FASE_NEUTRO:
+    calibre_fase = tabla_fase[-1][0]
+    for awg, amp in tabla_fase:
         if amp > amp_por_hilo_fase: 
             calibre_fase = awg
             break
 
-    num_conductores_neutro = math.ceil(corriente_neutro / 700) if corriente_neutro > 700 else 1
+    num_conductores_neutro = math.ceil(corriente_neutro / max_amp) if corriente_neutro >= max_amp else 1
     amp_por_hilo_neutro = (proteccion * 2) / num_conductores_neutro if tipo_eq == "FAA" else amp_por_hilo_fase
-    calibre_neutro = "500 KCMIL"
-    for awg, amp in TABLA_FASE_NEUTRO:
+    calibre_neutro = tabla_fase[-1][0]
+    for awg, amp in tabla_fase:
         if amp > amp_por_hilo_neutro: 
             calibre_neutro = awg
             break
@@ -205,31 +223,21 @@ def calcular_ingenieria_filtros(capacidad_str, voltaje_str, tipo_eq):
             calibre_tierra = awg
             break
 
-    return {
-        "corriente": round(corriente_base, 2), 
-        "corriente_fase": round(corriente_fase, 2),
-        "corriente_neutro": round(corriente_neutro, 2),
-        "proteccion": int(proteccion), 
-        "calibre_fase": calibre_fase, 
-        "hilos_fase": num_conductores_fase, 
-        "calibre_neutro": calibre_neutro, 
-        "hilos_neutro": num_conductores_neutro, 
-        "tierra": calibre_tierra, 
-        "hilos_tierra": num_conductores_tierra
-    }
+    return {"corriente": round(corriente_base, 2), "corriente_fase": round(corriente_fase, 2), "corriente_neutro": round(corriente_neutro, 2), "proteccion": int(proteccion), "calibre_fase": calibre_fase, "hilos_fase": num_conductores_fase, "calibre_neutro": calibre_neutro, "hilos_neutro": num_conductores_neutro, "tierra": calibre_tierra, "hilos_tierra": num_conductores_tierra}
 
-def calcular_ingenieria_trafo_puro(kva_total, voltaje_str):
+def calcular_ingenieria_trafo_puro(kva_total, voltaje_str, tipo_instalacion="Defecto"):
     v_ll = float(voltaje_str.split("/")[-1].replace("D", "").replace("V", "").strip())
     corriente = (kva_total * 1000) / (math.sqrt(3) * v_ll)
-    
-    # Protección al 100% redondeada a la decena superior
     proteccion = math.ceil(corriente / 10) * 10
     
-    num_conductores = math.ceil(corriente / 700) if corriente > 700 else 1
+    tabla_fase = TABLA_FASE_CHAROLA_75 if tipo_instalacion == "Charola" else (TABLA_FASE_LIBRE_75 if tipo_instalacion == "Libre" else TABLA_FASE_NEUTRO)
+    max_amp = tabla_fase[-1][1]
+
+    num_conductores = math.ceil(corriente / max_amp) if corriente >= max_amp else 1
     amp_por_hilo = proteccion / num_conductores
     
-    calibre_fase = "500 KCMIL"
-    for awg, amp in TABLA_FASE_NEUTRO:
+    calibre_fase = tabla_fase[-1][0]
+    for awg, amp in tabla_fase:
         if amp > amp_por_hilo: 
             calibre_fase = awg
             break
@@ -243,13 +251,7 @@ def calcular_ingenieria_trafo_puro(kva_total, voltaje_str):
             calibre_tierra = awg
             break
             
-    return {
-        "corriente": round(corriente, 2), "proteccion": int(proteccion), 
-        "calibre_fase": calibre_fase, "hilos_fase": num_conductores, 
-        "calibre_neutro": calibre_fase, "hilos_neutro": num_conductores, 
-        "tierra": calibre_tierra, "hilos_tierra": num_tierra
-    }
-
+    return {"corriente": round(corriente, 2), "proteccion": int(proteccion), "calibre_fase": calibre_fase, "hilos_fase": num_conductores, "calibre_neutro": calibre_fase, "hilos_neutro": num_conductores, "tierra": calibre_tierra, "hilos_tierra": num_tierra}
 def obtener_modelo_filtro(tipo_filtro, kva):
     if tipo_filtro == "FAP":
         modelos = [30, 45, 50, 100, 150, 200, 300, 500]
@@ -827,6 +829,24 @@ def registrar_bloque(doc, archivo_dxf, nombre_bloque):
 def generar_diagrama_dxf(datos):
     doc = ezdxf.new('R2010', setup=True)
     msp = doc.modelspace()
+
+    # --- HELPERS PARA DIBUJO MULTIVOLTAJE DE BREAKERS ---
+    def generar_texto_breaker(voltaje_base, kva_calculo, es_entrada, proteccion_base, aplica_multivoltaje):
+        if not aplica_multivoltaje:
+            return [f"PROT: 3x{proteccion_base} A"]
+        taps = obtener_familia_voltajes(voltaje_base)
+        if len(taps) <= 1:
+            return [f"PROT: 3x{proteccion_base} A"]
+        lineas = ["PROT:"]
+        for tap in taps:
+            eng = calcular_ingenieria_pura(kva_calculo, tap, es_entrada, datos["Tipo Equipo"], "Charola")
+            lineas.append(f"{tap}: 3x{eng['proteccion']}A")
+        return lineas
+
+    def dibujar_textos_breaker(x, y, lineas, tamano=4.0, interlineado=5.5):
+        for i, linea in enumerate(lineas):
+            msp.add_text(linea, height=tamano).set_placement((x, y - (i * interlineado)))
+    # ---------------------------------------------------
 
     # --- DICCIONARIO DE NOTAS DINÁMICAS ---
     notas_ups = [
@@ -1411,7 +1431,15 @@ def generar_diagrama_dxf(datos):
             msp.add_circle(center=(x, y), radius=4)
             msp.add_text(str(indices_tabla[clave]), height=3.5).set_placement((x, y - 1.2), align=TextEntityAlignment.CENTER)
 
-    x_c, y = 0, 0
+    # --- LÓGICA DE CENTRADO UNIFICADA ---
+    modo_calc = datos.get("Modo Calculo", "Estándar (90°C)")
+    requiere_hoja_2 = modo_calc in ["Multivoltaje 75°C", "Temperatura 75°C (Un solo voltaje)"]
+    aplica_multi_centrado = requiere_hoja_2 and (datos["Trafo Entrada"] != "Ninguno" or datos["Trafo Salida"] != "Ninguno")
+    
+    offset_val = globals().get('OFFSET_X_CENTRADO_MULTIVOLTAJE', -20.0)
+    x_c = offset_val if aplica_multi_centrado else 0.0
+    y = 0.0
+
     if datos["Tipo Equipo"] == "AMCR": bloque_principal = "BLK_AMCR"
     elif datos["Tipo Equipo"] == "CFR": bloque_principal = "BLK_CFR"
     else: bloque_principal = "BLK_UPS"
@@ -1429,7 +1457,13 @@ def generar_diagrama_dxf(datos):
         txt_x, txt_y = x_c + OFFSET_X_TEXTO_IND, y + OFFSET_Y_TEXTO_IND
         
         breaker_in_dibujo = datos.get("PR_UPS_IN", eng_in_ups['proteccion'])
-        msp.add_text(f"PROT: 3x{breaker_in_dibujo} A", height=4.5).set_placement((txt_x + SEPARACION_TEXTO_X, txt_y - 14))
+        aplica_multi = datos.get("Multivoltaje", False) and datos["Trafo Entrada"] != "Ninguno"
+        
+        # Declaramos el voltaje explícitamente para evitar el error de variable indefinida
+        voltaje_entrada_real = datos["Voltaje In"]
+        
+        lineas_brk = generar_texto_breaker(voltaje_entrada_real, kva_u, True, breaker_in_dibujo, aplica_multi)
+        dibujar_textos_breaker(txt_x + SEPARACION_TEXTO_X, txt_y - 14, lineas_brk)
         dibujar_globo(x_c + OFFSET_GLOBO_ENTRADA_UPS_IND[0], y + OFFSET_GLOBO_ENTRADA_UPS_IND[1], 'ENTRADA_UPS')
 
         y -= ALTO_CONEXION_DIRECTA
@@ -1470,7 +1504,11 @@ def generar_diagrama_dxf(datos):
             clave_entrada = 'ENTRADA_UPS'
             
         breaker_in_dibujo = datos.get(llave_breaker_in, eng_main_in['proteccion'])
-        msp.add_text(f"PROT: 3x{breaker_in_dibujo} A", height=4.5).set_placement((x_c + SEPARACION_TEXTO_X, y - 4))
+        aplica_multi = datos.get("Multivoltaje", False) and datos["Trafo Entrada"] != "Ninguno"
+        v_main = datos["Voltaje GABCONX"] if ("Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí") else (datos["Voltaje Red"] if datos["Tipo Equipo"]=="AMCR" and datos["Trafo Entrada"] != "Ninguno" else datos["Voltaje In"])
+        kva_main = kva_tot if ("Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí") else kva_u
+        lineas_brk = generar_texto_breaker(v_main, kva_main, True, breaker_in_dibujo, aplica_multi)
+        dibujar_textos_breaker(x_c + SEPARACION_TEXTO_X, y - 4, lineas_brk)
         dibujar_globo(x_c + OFFSET_GLOBO_ENTRADA_PRINCIPAL[0], y + OFFSET_GLOBO_ENTRADA_PRINCIPAL[1], clave_entrada) 
 
         y -= ESPACIO_BREAKER_PRINCIPAL
@@ -1617,7 +1655,10 @@ def generar_diagrama_dxf(datos):
     elif datos["Tipo Equipo"] == "AMCR": llave_breaker_out = "PR_AMCR_OUT"; breaker_out_dibujo = datos.get(llave_breaker_out, eng_main_out['proteccion'])
     else: llave_breaker_out = "PR_UPS_OUT"; breaker_out_dibujo = datos.get(llave_breaker_out, eng_main_out['proteccion'])
 
-    msp.add_text(f"PROT: 3x{breaker_out_dibujo} A", height=4.5).set_placement((x_c + SEPARACION_TEXTO_X, y - 4))
+    aplica_multi_out = datos.get("Multivoltaje", False) and datos["Trafo Salida"] != "Ninguno"
+    v_out_main = datos["Voltaje GABPAR"] if "Paralelo" in datos["Topología"] else datos["Voltaje Out"]
+    lineas_brk_out = generar_texto_breaker(v_out_main, kva_tot, False, breaker_out_dibujo, aplica_multi_out)
+    dibujar_textos_breaker(x_c + SEPARACION_TEXTO_X, y - 4, lineas_brk_out)
     clave_salida = 'SALIDA_GABPAR' if "Paralelo" in datos["Topología"] else ('SALIDA_FILTRO' if datos["Filtro"] != "Ninguno" else 'SALIDA_UPS')
     dibujar_globo(x_c + OFFSET_GLOBO_SALIDA_FINAL[0], y + OFFSET_GLOBO_SALIDA_FINAL[1], clave_salida) 
     
@@ -1626,8 +1667,12 @@ def generar_diagrama_dxf(datos):
 
     y_max = 20; y_min = y - 30; alto_dibujo = y_max - y_min; centro_y_dibujo = (y_max + y_min) / 2
     if num_ups == 1:
-        x_min = -DISTANCIA_X_BAT - 70 
-        x_max = 70
+        if aplica_multi_centrado:
+            x_min = -DISTANCIA_X_BAT - 60
+            x_max = 120
+        else:
+            x_min = -DISTANCIA_X_BAT - 70 
+            x_max = 70
     else:
         offset_paralelo = -((num_ups - 1) * ESPACIO_PARALELO) / 2
         x_min = offset_paralelo - DISTANCIA_X_BAT - 70
@@ -1657,67 +1702,56 @@ def generar_diagrama_dxf(datos):
     h_ren = TABLA_ALTO_RENGLON * factor_escala * factor_compresion
     t_size = TABLA_TAMANO_TEXTO * factor_escala * factor_compresion
     
-    y_curr = y_tabla_base
-    msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr)) 
-    for sec in secciones:
-        y_sec_start = y_curr
-        for linea in sec["lineas"]:
-            msp.add_text(linea, height=t_size).set_placement((x_tabla_base + w_c1 + (2*factor_escala), y_curr - (h_ren*0.8)))
-            y_curr -= h_ren
-            msp.add_line((x_tabla_base + w_c1, y_curr), (x_tabla_base + w_tot, y_curr))
-        y_center_sec = (y_sec_start + y_curr) / 2
-        # Evitar imprimir numero vacío
-        if sec["num"]: msp.add_text(str(sec["num"]), height=t_size*1.3).set_placement((x_tabla_base + (w_c1/2), y_center_sec - (t_size*0.65)), align=TextEntityAlignment.CENTER)
-        msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
-        
-    msp.add_line((x_tabla_base, y_tabla_base), (x_tabla_base, y_curr))
-    msp.add_line((x_tabla_base + w_c1, y_tabla_base), (x_tabla_base + w_c1, y_curr))
-    msp.add_line((x_tabla_base + w_tot, y_tabla_base), (x_tabla_base + w_tot, y_curr))
+    # --- NUEVA LÓGICA DE MODOS DE CÁLCULO ---
+    modo_calculo = datos.get("Modo Calculo", "Estándar (90°C)")
+    requiere_hoja_2 = modo_calculo in ["Multivoltaje 75°C", "Temperatura 75°C (Un solo voltaje)"]
+    
+    # Si NO requiere Hoja 2, dibujamos la tabla normal en la Hoja 1
+    if not requiere_hoja_2:
+        y_curr = y_tabla_base
+        msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr)) 
+        for sec in secciones:
+            y_sec_start = y_curr
+            for linea in sec["lineas"]:
+                msp.add_text(linea, height=t_size).set_placement((x_tabla_base + w_c1 + (2*factor_escala), y_curr - (h_ren*0.8)))
+                y_curr -= h_ren
+                msp.add_line((x_tabla_base + w_c1, y_curr), (x_tabla_base + w_tot, y_curr))
+            y_center_sec = (y_sec_start + y_curr) / 2
+            if sec["num"]: msp.add_text(str(sec["num"]), height=t_size*1.3).set_placement((x_tabla_base + (w_c1/2), y_center_sec - (t_size*0.65)), align=TextEntityAlignment.CENTER)
+            msp.add_line((x_tabla_base, y_curr), (x_tabla_base + w_tot, y_curr))
+            
+        msp.add_line((x_tabla_base, y_tabla_base), (x_tabla_base, y_curr))
+        msp.add_line((x_tabla_base + w_c1, y_tabla_base), (x_tabla_base + w_c1, y_curr))
+        msp.add_line((x_tabla_base + w_tot, y_tabla_base), (x_tabla_base + w_tot, y_curr))
 
-   # --- SISTEMA INTELIGENTE DE NOTAS (CASO A y CASO B) ---
-    # 1. Seleccionamos las notas correctas según el equipo
+    # --- SISTEMA INTELIGENTE DE NOTAS (CASO A y CASO B) ---
     if datos["Tipo Equipo"] == "UPS": notas_seleccionadas = notas_ups.copy()
     elif datos["Tipo Equipo"] == "CFR": notas_seleccionadas = notas_cfr.copy()
     else: notas_seleccionadas = notas_amcr.copy()
 
-    # Inyectar regla de donas si lleva Filtro Activo o CR FA como accesorio
     if datos.get("Filtro") in ["FAA", "CR FA"]:
         notas_seleccionadas.append("6.-DONAS DE CORRIENTE NO INCLUIDAS.")
 
-    # 2. Parámetros base y Variables de Control
     TAMANO_TEXTO_NOTAS = 2.5
     INTERLINEADO_NOTAS = 4.5
-    
-    # ⚙️ VARIABLES PARA CALIBRAR EL CASO A (Anclado abajo a la izquierda):
-    OFFSET_X_NOTAS_CASO_A = 19.13  # Alineado perfectamente con el inicio de la tabla
-    OFFSET_Y_NOTAS_CASO_A = 70.0   # Sube o baja las notas desde el piso del marco
-    
-    # ⚙️ VARIABLES PARA CALIBRAR EL CASO B (Anclado abajo a la derecha):
+    OFFSET_X_NOTAS_CASO_A = 19.13  
+    OFFSET_Y_NOTAS_CASO_A = 70.0   
     OFFSET_X_NOTAS_CASO_B = 426  
     OFFSET_Y_NOTAS_CASO_B = 85.0   
-    
-    # ⚙️ GATILLO: ¿A los cuántos renglones de tabla saltamos al Caso B?
     MAX_RENGLONES_TABLA = 40
 
-    # 3. Lógica de posicionamiento automático
-    if total_lineas <= MAX_RENGLONES_TABLA:
-        # CASO A: Fijo en la esquina inferior izquierda
+    # Si va a Hoja 2, la Hoja 1 siempre tendrá espacio para las notas (Caso A)
+    if total_lineas <= MAX_RENGLONES_TABLA or requiere_hoja_2:
         y_nota_actual = insert_y + (OFFSET_Y_NOTAS_CASO_A * factor_escala)
         x_nota_actual = insert_x + (OFFSET_X_NOTAS_CASO_A * factor_escala)
-        
         tamano_fuente = TAMANO_TEXTO_NOTAS * factor_escala * factor_compresion
         interlineado_actual = INTERLINEADO_NOTAS * factor_escala * factor_compresion
     else:
-        # CASO B: Tabla muy grande, saltamos a la posición de respaldo
         y_nota_actual = insert_y + (OFFSET_Y_NOTAS_CASO_B * factor_escala)
         x_nota_actual = insert_x + (OFFSET_X_NOTAS_CASO_B * factor_escala)
-        
-        # Eliminamos el factor_compresion para que el CAD no deforme el texto
-        # y reducimos a 0.6 para garantizar que quepa perfecto.
         tamano_fuente = (TAMANO_TEXTO_NOTAS * 0.6) * factor_escala 
         interlineado_actual = (INTERLINEADO_NOTAS * 0.6) * factor_escala
 
-    # 4. Dibujar renglón por renglón
     for linea in notas_seleccionadas:
         msp.add_text(linea, height=tamano_fuente).set_placement((x_nota_actual, y_nota_actual))
         y_nota_actual -= interlineado_actual
@@ -1726,6 +1760,23 @@ def generar_diagrama_dxf(datos):
     fecha_actual = datetime.now().strftime("%m/%y")
     nombre_oficial = generar_nombre_base(datos) 
     numero_diag = datos.get("Numero Diagrama", "000000")
+
+    # --- UNIFICACIÓN DEL TÍTULO PARA HOJA 1 ---
+    if modo_calculo == "Multivoltaje 75°C":
+        v_in_orig = datos["Voltaje GABCONX"] if ("Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí") else (datos["Voltaje Red"] if datos["Tipo Equipo"]=="AMCR" and datos["Trafo Entrada"] != "Ninguno" else datos["Voltaje In"])
+        v_out_orig = datos["Voltaje GABPAR"] if "Paralelo" in datos["Topología"] else datos["Voltaje Out"]
+        taps_in_titulo = obtener_familia_voltajes(v_in_orig)
+        taps_out_titulo = obtener_familia_voltajes(v_out_orig)
+        
+        import re
+        taps_unicos_titulo = sorted(set(taps_in_titulo + taps_out_titulo))
+        texto_taps_juntos = ', '.join(taps_unicos_titulo)
+        
+        if "VN " in nombre_oficial:
+            nombre_oficial = re.sub(r'VN \S+', f"VN: {texto_taps_juntos}", nombre_oficial)
+        elif "VE " in nombre_oficial:
+            nombre_oficial = re.sub(r'VE \S+ VS \S+', f"VN: {texto_taps_juntos}", nombre_oficial)
+
     nombre_completo = f"{numero_diag} {nombre_oficial}"
 
     TAMANO_IDEAL_TITULO = 2.2       
@@ -1761,6 +1812,160 @@ def generar_diagrama_dxf(datos):
     t_num_top.set_placement((insert_x + (COORD_X_CAJETIN_NUMERO_TOP * factor_escala), insert_y + (COORD_Y_CAJETIN_NUMERO_TOP * factor_escala)))
     t_num_top.dxf.color = 1
     t_num_top.dxf.rotation = 180  
+
+    # ========================================================
+    #   SISTEMA DE DOBLE HOJA (TABLAS 75°C Y MULTIVOLTAJE)
+    # ========================================================
+    if requiere_hoja_2:
+        global TABLA_FASE_CHAROLA_75, TABLA_FASE_LIBRE_75
+        
+        # 1. Etiqueta Hoja 1
+        t_h1 = msp.add_text("HOJA 1 DE 2", height=TAMANO_TEXTO_NUMERO * factor_escala)
+        t_h1.set_placement((insert_x + (540 * factor_escala), insert_y + (412 * factor_escala)), align=TextEntityAlignment.RIGHT)
+        t_h1.dxf.color = 1
+
+        # 2. Configurar Coordenadas Hoja 2
+        offset_x_h2 = 580 * factor_escala
+        x_h2 = insert_x + offset_x_h2
+        
+        # 3. Dibujar Marco de Hoja 2
+        msp.add_blockref("BLK_MARCO", insert=(x_h2, insert_y), dxfattribs={'xscale': factor_escala, 'yscale': factor_escala, 'zscale': factor_escala})
+        
+        t_h2 = msp.add_text("HOJA 2 DE 2", height=TAMANO_TEXTO_NUMERO * factor_escala)
+        t_h2.set_placement((x_h2 + (540 * factor_escala), insert_y + (412 * factor_escala)), align=TextEntityAlignment.RIGHT)
+        t_h2.dxf.color = 1
+
+        # 4. Cajetín Hoja 2
+        t_dib_h2 = msp.add_text(datos["Dibujó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_dib_h2.set_placement((x_h2 + (COORD_X_CAJETIN_DIBUJO * factor_escala), insert_y + (COORD_Y_CAJETIN_DIBUJO * factor_escala)))
+        t_dib_h2.dxf.color = 4  
+        t_f_dib_h2 = msp.add_text(fecha_actual, height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_f_dib_h2.set_placement((x_h2 + (COORD_X_CAJETIN_FECH_D * factor_escala), insert_y + (COORD_Y_CAJETIN_FECH_D * factor_escala)))
+        t_f_dib_h2.dxf.color = 2  
+        t_rev_h2 = msp.add_text(datos["Revisó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_rev_h2.set_placement((x_h2 + (COORD_X_CAJETIN_REVISO * factor_escala), insert_y + (COORD_Y_CAJETIN_REVISO * factor_escala)))
+        t_rev_h2.dxf.color = 30 
+        t_f_rev_h2 = msp.add_text(fecha_actual, height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_f_rev_h2.set_placement((x_h2 + (COORD_X_CAJETIN_FECH_R * factor_escala), insert_y + (COORD_Y_CAJETIN_FECH_R * factor_escala)))
+        t_f_rev_h2.dxf.color = 2  
+        
+        # --- AGREGADO: Firmas de Aprobación para Hoja 2 ---
+        t_apr_h2 = msp.add_text(datos["Revisó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_apr_h2.set_placement((x_h2 + (COORD_X_CAJETIN_APROBO * factor_escala), insert_y + (COORD_Y_CAJETIN_APROBO * factor_escala)))
+        t_apr_h2.dxf.color = 30 
+        t_f_apr_h2 = msp.add_text(fecha_actual, height=TAMANO_TEXTO_FIRMAS * factor_escala)
+        t_f_apr_h2.set_placement((x_h2 + (COORD_X_CAJETIN_FECH_A * factor_escala), insert_y + (COORD_Y_CAJETIN_FECH_A * factor_escala)))
+        t_f_apr_h2.dxf.color = 2  
+        # --------------------------------------------------
+        
+        t_num_h2 = msp.add_text(numero_diag, height=TAMANO_TEXTO_NUMERO * factor_escala)
+        t_num_h2.set_placement((x_h2 + (COORD_X_CAJETIN_NUMERO * factor_escala), insert_y + (COORD_Y_CAJETIN_NUMERO * factor_escala)))
+        t_num_h2.dxf.color = 1  
+        t_num_top_h2 = msp.add_text(numero_diag, height=TAMANO_TEXTO_NUMERO * factor_escala)
+        t_num_top_h2.set_placement((x_h2 + (COORD_X_CAJETIN_NUMERO_TOP * factor_escala), insert_y + (COORD_Y_CAJETIN_NUMERO_TOP * factor_escala)))
+        t_num_top_h2.dxf.color = 1; t_num_top_h2.dxf.rotation = 180
+
+        # 5. Título de Hoja 2 (Ya unificado en nombre_oficial)
+        t_nom_h2 = msp.add_text(nombre_oficial, height=TAMANO_IDEAL_TITULO * factor_escala * factor_ajuste_titulo)
+        t_nom_h2.set_placement((x_h2 + (COORD_X_CAJETIN_NOMBRE * factor_escala), insert_y + (COORD_Y_CAJETIN_NOMBRE * factor_escala)))
+        t_nom_h2.dxf.color = 6
+
+        # 6. Lógica de Taps según el modo
+        v_in_orig = datos["Voltaje GABCONX"] if ("Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí") else (datos["Voltaje Red"] if datos["Tipo Equipo"]=="AMCR" and datos["Trafo Entrada"] != "Ninguno" else datos["Voltaje In"])
+        v_out_orig = datos["Voltaje GABPAR"] if "Paralelo" in datos["Topología"] else datos["Voltaje Out"]
+        
+        if modo_calculo == "Multivoltaje 75°C":
+            taps_in = obtener_familia_voltajes(v_in_orig)
+            taps_out = obtener_familia_voltajes(v_out_orig)
+        else:
+            taps_in = [v_in_orig]
+            taps_out = [v_out_orig]
+            
+        max_taps = max(len(taps_in), len(taps_out))
+        while len(taps_in) < max_taps: taps_in.append(taps_in[-1])
+        while len(taps_out) < max_taps: taps_out.append(taps_out[-1])
+
+        # 7. Generación de Matrices de Datos
+        sec_charola = []
+        sec_libre = []
+        global TABLA_FASE_NEUTRO
+        _backup_fase = list(TABLA_FASE_NEUTRO)
+        
+        for i in range(max_taps):
+            datos_t = dict(datos)
+            if datos_t.get("Voltaje Red") == v_in_orig: datos_t["Voltaje Red"] = taps_in[i]
+            if datos_t.get("Voltaje In") == v_in_orig: datos_t["Voltaje In"] = taps_in[i]
+            if datos_t.get("Voltaje GABCONX") == v_in_orig: datos_t["Voltaje GABCONX"] = taps_in[i]
+            if datos_t.get("Voltaje Out") == v_out_orig: datos_t["Voltaje Out"] = taps_out[i]
+            if datos_t.get("Voltaje GABPAR") == v_out_orig: datos_t["Voltaje GABPAR"] = taps_out[i]
+            
+            # Limpiar protecciones para forzar recálculo nativo
+            for k in list(datos_t.keys()):
+                if k.startswith("PR_") or k.startswith("CF_") or k.startswith("CT_") or k.startswith("HF_") or k.startswith("HT_"):
+                    del datos_t[k]
+            
+            # Recalcular Charola
+            TABLA_FASE_NEUTRO[:] = TABLA_FASE_CHAROLA_75
+            sec_charola.append(generar_secciones_tabla(datos_t, kva_u, num_ups, kva_tot))
+            
+            # Recalcular Aire Libre
+            TABLA_FASE_NEUTRO[:] = TABLA_FASE_LIBRE_75
+            sec_libre.append(generar_secciones_tabla(datos_t, kva_u, num_ups, kva_tot))
+            
+        TABLA_FASE_NEUTRO[:] = _backup_fase
+
+        # 8. Motor de Dibujo de Tablas Múltiples (Adaptado para Side-by-Side)
+        def dibujar_tabla_multi(secciones_taps, titulo, y_start, offset_x=0, ancho_total=520):
+            t_size = 2.2 * factor_escala # Ligeramente más pequeño para que quepa perfecto en columnas divididas
+            h_ren = 5.5 * factor_escala
+            x_b = x_h2 + (COORD_X_INICIO_TABLA * factor_escala) + (offset_x * factor_escala)
+            w_tot_h2 = ancho_total * factor_escala 
+            w_c1_h2 = 18 * factor_escala # Columna PTO ligeramente más delgada
+            w_col = (w_tot_h2 - w_c1_h2) / max_taps
+            
+            msp.add_text(titulo, height=t_size*1.3).set_placement((x_b + (w_tot_h2/2), y_start + (h_ren*0.5)), align=TextEntityAlignment.CENTER)
+            y_c = y_start
+            msp.add_line((x_b, y_c), (x_b + w_tot_h2, y_c))
+            y_c -= h_ren
+            
+            msp.add_text("PTO", height=t_size).set_placement((x_b + (w_c1_h2/2), y_c + (h_ren*0.2)), align=TextEntityAlignment.CENTER)
+            for i in range(max_taps):
+                txt_col = f"Tensión: {taps_in[i]}" if taps_in[i] == taps_out[i] else f"Ent: {taps_in[i]} / Sal: {taps_out[i]}"
+                msp.add_text(txt_col, height=t_size).set_placement((x_b + w_c1_h2 + (i * w_col) + (w_col/2), y_c + (h_ren*0.2)), align=TextEntityAlignment.CENTER)
+            msp.add_line((x_b, y_c), (x_b + w_tot_h2, y_c))
+            
+            for s_idx in range(len(secciones_taps[0])):
+                max_lines = max(len(secciones_taps[t][s_idx]["lineas"]) for t in range(max_taps))
+                y_sec_start = y_c
+                for t in range(max_taps):
+                    sec = secciones_taps[t][s_idx]
+                    y_txt = y_sec_start
+                    for linea in sec["lineas"]:
+                        msp.add_text(linea, height=t_size).set_placement((x_b + w_c1_h2 + (t * w_col) + (2*factor_escala), y_txt - (h_ren*0.8)))
+                        y_txt -= h_ren
+                y_c = y_sec_start - (max_lines * h_ren)
+                
+                num_g = str(secciones_taps[0][s_idx]["num"])
+                if num_g: msp.add_text(num_g, height=t_size*1.3).set_placement((x_b + (w_c1_h2/2), ((y_sec_start + y_c)/2) - (t_size*0.65)), align=TextEntityAlignment.CENTER)
+                msp.add_line((x_b, y_c), (x_b + w_tot_h2, y_c))
+                
+            msp.add_line((x_b, y_start), (x_b, y_c))
+            for i in range(max_taps + 1):
+                xl = x_b + w_c1_h2 + (i * w_col)
+                msp.add_line((xl, y_start), (xl, y_c))
+            return y_c - (12 * factor_escala)
+
+        # 9. Renderizado final de ambas tablas (Dinámico según el modo)
+        y_inicial_tablas = insert_y + (385 * factor_escala)
+        
+        if modo_calculo == "Multivoltaje 75°C":
+            # Apiladas verticalmente (una encima de la otra) con ancho completo de 520 para que quepan todos los voltajes
+            y_libre = dibujar_tabla_multi(sec_charola, "TABLA 1: CÁLCULO DE CABLEADO PARA INSTALACIÓN EN CHAROLA (75°C)", y_inicial_tablas, offset_x=0, ancho_total=520)
+            dibujar_tabla_multi(sec_libre, "TABLA 2: CÁLCULO DE CABLEADO PARA INSTALACIÓN AL AIRE LIBRE (75°C)", y_libre, offset_x=0, ancho_total=520)
+        else:
+            # Lado a lado (255 de ancho) para "Temperatura 75°C (Un solo voltaje)" ya que ocupan menos espacio horizontal
+            dibujar_tabla_multi(sec_charola, "TABLA 1: CHAROLA (75°C)", y_inicial_tablas, offset_x=0, ancho_total=255)
+            dibujar_tabla_multi(sec_libre, "TABLA 2: AIRE LIBRE (75°C)", y_inicial_tablas, offset_x=265, ancho_total=255)
 
     nombre_archivo = nombre_completo + ".dxf"
     return doc, nombre_archivo
@@ -1820,12 +2025,27 @@ st.markdown("Plataforma Web para Generación Automática de Diagramas Unifilares
 st.divider()
 # --- FIN DE LA CABECERA ---
 
+# --- ⚙️ OPCIONES AVANZADAS DE INGENIERÍA ---
+with st.expander("⚙️ Opciones Avanzadas de Cálculo", expanded=False):
+    modo_calculo = st.radio(
+        "Selecciona el modo de cálculo:",
+        ["Estándar (90°C)", "Temperatura 75°C (Un solo voltaje)", "Multivoltaje 75°C"],
+        horizontal=True
+    )
+    
+calc_multivoltaje = modo_calculo == "Multivoltaje 75°C"
+calc_75_single = modo_calculo == "Temperatura 75°C (Un solo voltaje)"
+st.write("")
+
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     with st.container(border=True):
         st.markdown('<div class="tarjeta-base color-equipo">⚡ Equipo Principal</div>', unsafe_allow_html=True)
-        tipo_equipo = st.radio("Tipo de Equipo:", ["UPS", "CFR", "AMCR", "FAA", "CR FA", "TA", "AT"], horizontal=True)
+        
+        # --- FILTRO DINÁMICO DE EQUIPOS ---
+        opciones_equipos = ["UPS", "CFR", "AMCR"] if calc_multivoltaje else ["UPS", "CFR", "AMCR", "FAA", "CR FA", "TA", "AT"]
+        tipo_equipo = st.radio("Tipo de Equipo:", opciones_equipos, horizontal=True)
         
         voltajes_l = ["120/208V", "127/220V", "139/240V"]
         voltajes_h = ["230/400V", "254/440V", "265/460V", "277/480V"]
@@ -1848,7 +2068,7 @@ with col1:
         else:
             if tipo_equipo == "UPS":
                 capacidad = st.selectbox("Capacidad UPS:", CAPACIDADES_UPS)
-                familia = st.selectbox("Familia UPS:", ["M1", "N1", "R1", "MR1", "Ninguna"])
+                familia = st.selectbox("Familia UPS:", ["M1", "N1", "R1", "MR1", "HF"])
                 opciones_v = TODOS_LOS_VOLTAJES
             elif tipo_equipo == "CFR":
                 capacidad = st.selectbox("Capacidad CFR:", CAPACIDADES_CFR)
@@ -1875,6 +2095,16 @@ with col1:
             if tipo_equipo in ["FAA", "CR FA"]:
                 voltaje_in = st.selectbox("Voltaje de Conexión:", opciones_v)
                 voltaje_out = voltaje_in
+            elif calc_multivoltaje:
+                opciones_multi = [
+                    "115/200V, 120/208V, 127/220V", "208D, 220D",
+                    "220/380V, 230/400V", "380D, 400D",
+                    "254/440V, 266/460V, 277/480V", "440D, 460D, 480D"
+                ]
+                voltaje_seleccionado = st.selectbox("Voltaje Nominal de la Familia:", opciones_multi)
+                # Extraemos el primer voltaje internamente para que la lógica base no colapse
+                voltaje_in = voltaje_seleccionado.split(",")[0].strip()
+                voltaje_out = voltaje_in
             else:
                 voltaje_in = st.selectbox("Voltaje de entrada del Equipo:", opciones_v)
                 voltaje_out = st.selectbox("Voltaje de salida del Equipo:", opciones_v)
@@ -1890,28 +2120,56 @@ with col2:
         bat_ubi = st.selectbox("Ubicación Batería:", ["Externo", "Interno"], disabled=bat_disabled)
         st.write("")
         
-        trafo_in = st.toggle("Incluir Transformador de Entrada", disabled=es_filtro)
-        if trafo_in and not es_filtro:
-            tipo_trafo_in = st.selectbox("Tipo de transformador:", ["AT (Autotransformador)", "TA (Transformador de Aislamiento)"], key="trafo_in_secreto")
-            if tipo_equipo == "AMCR": voltaje_red = st.selectbox("Voltaje de Red (Entrada Trafo):", TODOS_LOS_VOLTAJES)
-            else: voltaje_red = voltaje_in
-        else:
-            tipo_trafo_in = "Ninguno"
+        # --- LÓGICA INTELIGENTE DE TRANSFORMADORES ---
+        def obtener_idx_trafo(voltaje_str):
+            # Si el voltaje tiene 'D' (Delta), regresa 1 (TA). Si no, regresa 0 (AT).
+            return 1 if "D" in voltaje_str.upper() else 0
+            
+        if calc_multivoltaje and not es_filtro:
+            st.success("Trafos Automáticos Activados")
+            trafo_in = True
+            trafo_out = True
+            
+            idx_multi = obtener_idx_trafo(voltaje_seleccionado)
+            opciones_trafo = ["AT (Autotransformador)", "TA (Transformador de Aislamiento)"]
+            tipo_trafo_in = opciones_trafo[idx_multi]
+            tipo_trafo_out = opciones_trafo[idx_multi]
+            
             voltaje_red = voltaje_in
+            gabinete_trafo = st.radio("Configuración de gabinetes:", ["Gabinetes Separados", "Un Solo Gabinete"], index=1)
+        else:
+            trafo_in = st.toggle("Incluir Transformador de Entrada", disabled=es_filtro)
+            if trafo_in and not es_filtro:
+                if tipo_equipo == "AMCR": 
+                    voltaje_red = st.selectbox("Voltaje de Red (Entrada Trafo):", TODOS_LOS_VOLTAJES)
+                    idx_in = obtener_idx_trafo(voltaje_red)
+                else: 
+                    voltaje_red = voltaje_in
+                    idx_in = obtener_idx_trafo(voltaje_in)
+                    
+                # El selectbox toma el índice automático pero te deja cambiarlo si fuera necesario
+                tipo_trafo_in = st.selectbox("Tipo de transformador:", ["AT (Autotransformador)", "TA (Transformador de Aislamiento)"], index=idx_in, key="trafo_in_secreto")
+            else:
+                tipo_trafo_in = "Ninguno"
+                voltaje_red = voltaje_in
 
-        trafo_out = st.toggle("Incluir Transformador de Salida", disabled=True if tipo_equipo in ["AMCR", "FAA", "CR FA"] else False)
-        if trafo_out and not es_filtro: tipo_trafo_out = st.selectbox("Tipo de transformador:", ["AT (Autotransformador)", "TA (Transformador de Aislamiento)"], key="trafo_out_secreto")
-        else: tipo_trafo_out = "Ninguno"
+            trafo_out = st.toggle("Incluir Transformador de Salida", disabled=True if tipo_equipo in ["AMCR", "FAA", "CR FA"] else False)
+            if trafo_out and not es_filtro: 
+                idx_out = obtener_idx_trafo(voltaje_out)
+                tipo_trafo_out = st.selectbox("Tipo de transformador:", ["AT (Autotransformador)", "TA (Transformador de Aislamiento)"], index=idx_out, key="trafo_out_secreto")
+            else: 
+                tipo_trafo_out = "Ninguno"
 
-        gabinete_trafo = "Separados" 
-        if trafo_in and trafo_out and not es_filtro:
-            st.info("⚡ Doble transformador detectado")
-            gabinete_trafo = st.radio("Configuración de gabinetes:", ["Gabinetes Separados", "Un Solo Gabinete"])
+            gabinete_trafo = "Separados" 
+            if trafo_in and trafo_out and not es_filtro:
+                st.info("⚡ Doble transformador detectado")
+                # Se establece el index=1 para que sea la opción por defecto en modo normal
+                gabinete_trafo = st.radio("Configuración de gabinetes:", ["Gabinetes Separados", "Un Solo Gabinete"], index=1)
 
 with col3:
     with st.container(border=True):
         st.markdown('<div class="tarjeta-base color-extras">🔄 Topología y Extras</div>', unsafe_allow_html=True)
-        paralelo_disabled = True if tipo_equipo in ["AMCR", "FAA", "CR FA", "TA", "AT"] else False
+        paralelo_disabled = True if (tipo_equipo in ["AMCR", "FAA", "CR FA", "TA", "AT"] or calc_multivoltaje) else False
         topologia = st.selectbox("Sistema Paralelo:", ["Unitario", "Paralelo Redundante", "Paralelo por Capacidad"], disabled=paralelo_disabled)
         
         if "Paralelo" in topologia and not paralelo_disabled:
@@ -1959,12 +2217,13 @@ with col4:
 
 datos = {
     "Tipo Equipo": tipo_equipo,
-    "Capacidad": capacidad, "Familia": familia if familia != "Ninguna" else "",
+    "Capacidad": capacidad, "Familia": familia if familia not in ["Ninguna", "HF"] else "",
     "Conexion In": conn_in if tipo_equipo in ["TA", "AT"] else "Estrella",
     "Conexion Out": conn_out if tipo_equipo in ["TA", "AT"] else "Estrella",
     "Voltaje Red": voltaje_red, "Voltaje In": voltaje_in, "Voltaje Out": voltaje_out,
     "Trafo Entrada": tipo_trafo_in, "Trafo Salida": tipo_trafo_out,
-    "Gabinete Doble Trafo": gabinete_trafo, "Topología": "Unitario" if tipo_equipo == "AMCR" else topologia, 
+    "Gabinete Doble Trafo": gabinete_trafo, 
+    "Topología": "Unitario" if (tipo_equipo == "AMCR" or paralelo_disabled) else topologia, 
     "Cantidad UPS": cantidad_ups, "GABCONX": "Sí" if gabconx else "No", 
     "Voltaje GABCONX": voltaje_gabconx, "Voltaje GABPAR": voltaje_gabpar,
     "Bypass Externo": "Sí" if bpe and ("Paralelo" not in topologia or paralelo_disabled) else "No",
@@ -1972,9 +2231,12 @@ datos = {
     "Config Trafo In": config_trafo_in,
     "SPV": "Sí" if spv else "No", "Capacidad SPV": cap_spv, 
     "Filtro": filtro, "Capacidad Filtro Acc": cap_filtro_acc, 
+    "Multivoltaje": calc_multivoltaje,
+    "Modo Calculo": modo_calculo,
     "Dibujó": dibujo, "Revisó": reviso,
     "Numero Diagrama": numero_diagrama 
 }
+
 
 # ==========================================================
 #   📊 SECCIÓN DE VALIDACIÓN CON NEGRO MATE
@@ -1995,230 +2257,251 @@ with st.container(border=True):
         except: return 0
 
     hay_riesgo_global = False
-    filas_resumen = []
 
-    sufijo_trafo_in = f" + Trafo {tipo_trafo_in.split(' ')[0]}" if trafo_in else ""
-    sufijo_trafo_out = f" + Trafo {tipo_trafo_out.split(' ')[0]}" if trafo_out else ""
-    sufijo_filtro = f" + Filtro {filtro}" if filtro != "Ninguno" else ""
+    def renderizar_tabla_ui(tipo_inst, prefix_key):
+        global hay_riesgo_global
 
-    if tipo_equipo == "FAA":
-        eng_f = calcular_ingenieria_filtros(capacidad, voltaje_in, tipo_equipo)
-        filas_resumen.append({
-            "tipo": "in_faa",
-            "titulo": f"🟢 Conexión de {tipo_equipo} (Fases) — Voltaje: {voltaje_in}",
-            "eng": eng_f,
-            "corriente_str": f"{eng_f['corriente_fase']} A",
-            "lbl_corriente": "Corriente de Fases (+25%)",
-            "lbl_fase": "Calibre Fases:",
-            "val_fase": eng_f['calibre_fase'], "val_hf": eng_f['hilos_fase'],
-            "pr": "PR_FILTRO", "cf": "CF_FILTRO", "ct": "CT_FILTRO", "hf": "HF_FILTRO", "ht": "HT_FILTRO",
-            "lleva_breaker": True, "mostrar_tierra": True
-        })
-        filas_resumen.append({
-            "tipo": "in_faa_n",
-            "titulo": f"⚪ Conexión de {tipo_equipo} (Neutro) — Corriente al doble que las Fases",
-            "eng": eng_f,
-            "corriente_str": f"{eng_f['corriente_neutro']} A",
-            "lbl_corriente": "Corriente de Neutro",
-            "lbl_fase": "Calibre Neutro:",
-            "val_fase": eng_f['calibre_neutro'], "val_hf": eng_f['hilos_neutro'],
-            "pr": "PR_FILTRO_N", "cf": "CN_FILTRO", "ct": "CT_FILTRO_N", "hf": "HN_FILTRO", "ht": "HT_FILTRO_N",
-            "lleva_breaker": False, "mostrar_tierra": False, "es_neutro": True
-        })
-    elif tipo_equipo == "CR FA":
-        eng_f = calcular_ingenieria_filtros(capacidad, voltaje_in, tipo_equipo)
-        filas_resumen.append({
-            "tipo": "in_crfa",
-            "titulo": f"🟢 Conexión de {tipo_equipo} — Voltaje: {voltaje_in}",
-            "eng": eng_f,
-            "corriente_str": f"{eng_f['corriente_fase']} A",
-            "lbl_corriente": "Corriente (+25%)",
-            "lbl_fase": "Calibre Fase/Neutro:",
-            "val_fase": eng_f['calibre_fase'], "val_hf": eng_f['hilos_fase'],
-            "pr": "PR_FILTRO", "cf": "CF_FILTRO", "ct": "CT_FILTRO", "hf": "HF_FILTRO", "ht": "HT_FILTRO",
-            "lleva_breaker": True, "mostrar_tierra": True
-        })
-        datos["CN_FILTRO"] = eng_f["calibre_neutro"]
-        datos["HN_FILTRO"] = eng_f["hilos_neutro"]
-    elif tipo_equipo in ["TA", "AT"]:
-        cap_num = int(capacidad.replace(" KVA", ""))
-        modelo_trafo_ui = f"{tipo_equipo}-30{cap_num:03d}"
+        sufijo_trafo_in = "" if calc_multivoltaje else (f" + Trafo {tipo_trafo_in.split(' ')[0]}" if trafo_in else "")
+        sufijo_trafo_out = "" if calc_multivoltaje else (f" + Trafo {tipo_trafo_out.split(' ')[0]}" if trafo_out else "")
+        sufijo_filtro = f" + Filtro {filtro}" if filtro != "Ninguno" else ""
         
-        eng_in = calcular_ingenieria_trafo_puro(cap_num, voltaje_in)
-        filas_resumen.append({
-            "tipo": "in", "titulo": f"🟢 Entrada a {modelo_trafo_ui} — Voltaje: {voltaje_in}",
-            "eng": eng_in,
-            "pr": "PR_TRAFO_IN", "cf": "CF_TRAFO_IN", "ct": "CT_TRAFO_IN", "hf": "HF_TRAFO_IN", "ht": "HT_TRAFO_IN",
-            "lleva_breaker": True
-        })
-        
-        eng_out = calcular_ingenieria_trafo_puro(cap_num, voltaje_out)
-        filas_resumen.append({
-            "tipo": "out", "titulo": f"🟠 Salida de {modelo_trafo_ui} — Voltaje: {voltaje_out}",
-            "eng": eng_out,
-            "pr": "PR_TRAFO_OUT", "cf": "CF_TRAFO_OUT", "ct": "CT_TRAFO_OUT", "hf": "HF_TRAFO_OUT", "ht": "HT_TRAFO_OUT",
-            "lleva_breaker": True
-        })
-    elif tipo_equipo == "AMCR":
-        modelo_amcr_ui = f"AMCR 23{int(kva_u_front):02d}"
-        
-        if trafo_in:
-            filas_resumen.append({
-                "tipo": "in", "titulo": f"🟢 Entrada a Transformador ({tipo_trafo_in.split(' ')[0]}) — Voltaje: {voltaje_red} VCA",
-                "eng": calcular_ingenieria_pura(kva_u_front, voltaje_red, False, tipo_equipo),
-                "pr": "PR_TRAFO_IN", "cf": "CF_TRAFO_IN", "ct": "CT_TRAFO_IN", "hf": "HF_TRAFO_IN", "ht": "HT_TRAFO_IN",
-                "lleva_breaker": True
-            })
-            filas_resumen.append({
-                "tipo": "in", "titulo": f"🟢 Entrada del {modelo_amcr_ui} (Desde Trafo) — Voltaje: {voltaje_in} VCA",
-                "eng": calcular_ingenieria_pura(kva_u_front, voltaje_in, False, tipo_equipo),
-                "pr": "PR_AMCR_IN", "cf": "CF_AMCR_IN", "ct": "CT_AMCR_IN", "hf": "HF_AMCR_IN", "ht": "HT_AMCR_IN",
-                "lleva_breaker": False
-            })
-        else:
-            filas_resumen.append({
-                "tipo": "in", "titulo": f"🟢 Entrada del {modelo_amcr_ui} — Voltaje: {voltaje_in} VCA",
-                "eng": calcular_ingenieria_pura(kva_u_front, voltaje_in, False, tipo_equipo),
-                "pr": "PR_AMCR_IN", "cf": "CF_AMCR_IN", "ct": "CT_AMCR_IN", "hf": "HF_AMCR_IN", "ht": "HT_AMCR_IN",
-                "lleva_breaker": True
-            })
+        lista_taps = [v.strip() for v in voltaje_seleccionado.split(",")] if calc_multivoltaje else ["Unico"]
+
+        for i_tap, tap_val in enumerate(lista_taps):
+            filas_resumen = []
+            v_in_base = tap_val if calc_multivoltaje else voltaje_in
+            v_out_base = tap_val if calc_multivoltaje else voltaje_out
+            v_red_base = tap_val if calc_multivoltaje else voltaje_red
+            v_gabconx_base = tap_val if calc_multivoltaje else (voltaje_gabconx if gabconx else voltaje_in)
+            v_gabpar_base = tap_val if calc_multivoltaje else voltaje_gabpar
             
-        filas_resumen.append({
-            "tipo": "out", "titulo": f"🟠 Salida del {modelo_amcr_ui} — Voltaje: {voltaje_out} VCA",
-            "eng": calcular_ingenieria_pura(kva_u_front, voltaje_out, False, tipo_equipo),
-            "pr": "PR_AMCR_OUT", "cf": "CF_AMCR_OUT", "ct": "CT_AMCR_OUT", "hf": "HF_AMCR_OUT", "ht": "HT_AMCR_OUT",
-            "lleva_breaker": True if filtro == "Ninguno" else False
-        })
-    else:
-        # Construir el modelo dinámico para la interfaz
-        if tipo_equipo == "CFR":
-            modelo_ui = f"CFR-IND 13{int(kva_u_front):02d}"
-        else:
-            familia_str = f" {familia}" if familia != "Ninguna" else ""
-            modelo_ui = f"UPS-IND-HF-13{int(kva_u_front):02d}{familia_str}"
+            suf_llave = f"_{i_tap}"
 
-        if "Paralelo" in topologia and gabconx:
-            filas_resumen.append({
-                "tipo": "in", "titulo": f"🟢 Entrada de Red Principal (GABCONX) — Voltaje: {voltaje_gabconx} VCA{sufijo_trafo_in}",
-                "eng": calcular_ingenieria_pura(kva_tot_front, voltaje_gabconx, True, tipo_equipo),
-                "pr": "PR_GABCONX_IN", "cf": "CF_GABCONX_IN", "ct": "CT_GABCONX_IN", "hf": "HF_GABCONX_IN", "ht": "HT_GABCONX_IN",
-                "lleva_breaker": True
-            })
-
-        sufijo_trafo_ups_in = sufijo_trafo_in if not ("Paralelo" in topologia and gabconx) else ""
-        lleva_brk_in = False if ("Paralelo" in topologia and gabconx) else True
-        filas_resumen.append({
-            "tipo": "in", "titulo": f"🟢 Entrada de {modelo_ui} — Voltaje: {voltaje_in} VCA{sufijo_trafo_ups_in}",
-            "eng": calcular_ingenieria_pura(kva_u_front, voltaje_in, True, tipo_equipo),
-            "pr": "PR_UPS_IN", "cf": "CF_UPS_IN", "ct": "CT_UPS_IN", "hf": "HF_UPS_IN", "ht": "HT_UPS_IN",
-            "lleva_breaker": lleva_brk_in
-        })
-
-        sufijo_extras_ups_out = sufijo_trafo_out + sufijo_filtro if "Paralelo" not in topologia else ""
-        lleva_brk_out = False if ("Paralelo" in topologia or filtro != "Ninguno") else True
-        filas_resumen.append({
-            "tipo": "out", "titulo": f"🟠 Salida de {modelo_ui} — Voltaje: {voltaje_out} VCA{sufijo_extras_ups_out}",
-            "eng": calcular_ingenieria_pura(kva_u_front, voltaje_out, False, tipo_equipo),
-            "pr": "PR_UPS_OUT", "cf": "CF_UPS_OUT", "ct": "CT_UPS_OUT", "hf": "HF_UPS_OUT", "ht": "HT_UPS_OUT",
-            "lleva_breaker": lleva_brk_out
-        })
-
-        if "Paralelo" in topologia:
-            filas_resumen.append({
-                "tipo": "out", "titulo": f"🟠 Salida de Gabinete Paralelo (Carga) — Voltaje: {voltaje_gabpar} VCA{sufijo_trafo_out}{sufijo_filtro}",
-                "eng": calcular_ingenieria_pura(kva_tot_front, voltaje_gabpar, False, tipo_equipo),
-                "pr": "PR_GABPAR_OUT", "cf": "CF_GABPAR_OUT", "ct": "CT_GABPAR_OUT", "hf": "HF_GABPAR_OUT", "ht": "HT_GABPAR_OUT",
-                "lleva_breaker": True
-            })
-
-    # Se agregan al final voltaje_gabconx y voltaje_gabpar
-    firma_estado = f"{tipo_equipo}_{capacidad}_{voltaje_red}_{voltaje_in}_{voltaje_out}_{topologia}_{cantidad_ups}_{gabconx}_{filtro}_{trafo_in}_{trafo_out}_{voltaje_gabconx}_{voltaje_gabpar}"
-    opciones_fase_limpias = [f"{calibre} (Soporta {amp}A)" for calibre, amp in TABLA_FASE_NEUTRO]
-    opciones_tierra_limpias = [f"{calibre} (Soporta {amp}A)" for calibre, amp in TABLA_TIERRA]
-
-    for f in filas_resumen:
-        st.markdown(f"**{f['titulo']}**")
-        c1, c2, c3_h, c3_c, c4_h, c4_c, c5 = st.columns([1.1, 1.1, 0.8, 1.8, 0.8, 1.8, 1])
-        
-        lbl_corr = f.get('lbl_corriente', "Corriente entrada (25%)" if f['tipo'] == "in" and tipo_equipo == "UPS" else ("Corriente de entrada" if f['tipo'] == "in" else "Corriente de salida"))
-        corriente_val = f.get('corriente_str', f"{f['eng']['corriente']} A")
-        
-        lleva_breaker = f.get('lleva_breaker', True)
-        if 'lleva_breaker' not in f:
-            if f['pr'] == "PR_UPS_IN" and ("Paralelo" in topologia and gabconx): lleva_breaker = False
-            if f['pr'] == "PR_UPS_OUT" and ("Paralelo" in topologia or filtro != "Ninguno"): lleva_breaker = False
-            
-        with c1: 
-            st.markdown(f"""
-            <div style='margin-bottom:5px;'>
-                <div style='font-size:14px; color:#a0aab2;'>{lbl_corr}</div>
-                <div style='font-size:24px; font-weight:bold; color:white;'>{corriente_val}</div>
-            </div>""", unsafe_allow_html=True)
-            
-        with c2: 
-            if lleva_breaker:
-                st.markdown(f"""
-                <div style='margin-bottom:5px;'>
-                    <div style='font-size:14px; color:#a0aab2;'>Protección</div>
-                    <div style='font-size:24px; font-weight:900; color:#FFD700;'>{f['eng']['proteccion']} A</div>
-                </div>""", unsafe_allow_html=True)
-            elif f.get('es_neutro'):
-                st.markdown("<div style='margin-bottom:5px;'><div style='font-size:14px; color:#a0aab2;'>Protección</div><div style='font-size:24px; font-weight:900; color:#777;'>N/A</div></div>", unsafe_allow_html=True)
-            else:
-                st.markdown("<div style='margin-bottom:5px;'><div style='font-size:14px; color:#a0aab2;'>Protección</div><div style='font-size:24px; font-weight:900; color:#777;'>N/A</div></div>", unsafe_allow_html=True)
+            if tipo_equipo == "FAA":
+                eng_f = calcular_ingenieria_filtros(capacidad, v_in_base, tipo_equipo, tipo_inst)
+                filas_resumen.append({
+                    "tipo": "in_faa", "titulo": f"🟢 Conexión de {tipo_equipo} (Fases)",
+                    "eng": eng_f, "corriente_str": f"{eng_f['corriente_fase']} A",
+                    "lbl_corriente": "Corriente de Fases (+25%)", "lbl_fase": "Calibre Fases:",
+                    "val_fase": eng_f['calibre_fase'], "val_hf": eng_f['hilos_fase'],
+                    "pr": "PR_FILTRO", "cf": "CF_FILTRO", "ct": "CT_FILTRO", "hf": "HF_FILTRO", "ht": "HT_FILTRO",
+                    "lleva_breaker": True, "mostrar_tierra": True, "idx_tap": i_tap, "suf_llave": suf_llave
+                })
+                filas_resumen.append({
+                    "tipo": "in_faa_n", "titulo": f"⚪ Conexión de {tipo_equipo} (Neutro)",
+                    "eng": eng_f, "corriente_str": f"{eng_f['corriente_neutro']} A",
+                    "lbl_corriente": "Corriente de Neutro", "lbl_fase": "Calibre Neutro:",
+                    "val_fase": eng_f['calibre_neutro'], "val_hf": eng_f['hilos_neutro'],
+                    "pr": "PR_FILTRO_N", "cf": "CN_FILTRO", "ct": "CT_FILTRO_N", "hf": "HN_FILTRO", "ht": "HT_FILTRO_N",
+                    "lleva_breaker": False, "mostrar_tierra": False, "es_neutro": True, "idx_tap": i_tap, "suf_llave": suf_llave
+                })
+            elif tipo_equipo == "CR FA":
+                eng_f = calcular_ingenieria_filtros(capacidad, v_in_base, tipo_equipo, tipo_inst)
+                filas_resumen.append({
+                    "tipo": "in_crfa", "titulo": f"🟢 Conexión de {tipo_equipo}",
+                    "eng": eng_f, "corriente_str": f"{eng_f['corriente_fase']} A",
+                    "lbl_corriente": "Corriente (+25%)", "lbl_fase": "Calibre Fase/Neutro:",
+                    "val_fase": eng_f['calibre_fase'], "val_hf": eng_f['hilos_fase'],
+                    "pr": "PR_FILTRO", "cf": "CF_FILTRO", "ct": "CT_FILTRO", "hf": "HF_FILTRO", "ht": "HT_FILTRO",
+                    "lleva_breaker": True, "mostrar_tierra": True, "idx_tap": i_tap, "suf_llave": suf_llave
+                })
+                if i_tap == 0:
+                    datos["CN_FILTRO"] = eng_f["calibre_neutro"]
+                    datos["HN_FILTRO"] = eng_f["hilos_neutro"]
+            elif tipo_equipo in ["TA", "AT"]:
+                cap_num = int(capacidad.replace(" KVA", ""))
+                modelo_trafo_ui = f"{tipo_equipo}-30{cap_num:03d}"
                 
-        lbl_fase = f.get('lbl_fase', "Calibre Fase/Neutro:")
-        val_fase_eng = f.get('val_fase', f['eng']['calibre_fase'])
-        val_hf_eng = f.get('val_hf', f['eng']['hilos_fase'])
-        idx_f = buscar_indice(TABLA_FASE_NEUTRO, val_fase_eng)
-        
-        idx_t = buscar_indice(TABLA_TIERRA, f['eng']['tierra'])
-        mostrar_tierra = f.get('mostrar_tierra', True)
-        
-        with c3_h: sel_hf = st.number_input("Hilos:", min_value=1, max_value=99, value=val_hf_eng, key=f"hf_{f['cf']}_{firma_estado}")
-        with c3_c: 
-            sel_f = st.selectbox(lbl_fase, options=opciones_fase_limpias, index=idx_f, key=f"cf_{f['cf']}_{firma_estado}")
-            amp_f_base = extraer_ampacidad(sel_f)
-            capacidad_total_f = amp_f_base * sel_hf
-            st.markdown(f"<div style='font-size:13px; color:#a0aab2; margin-top:-10px; text-align:right;'>⚡ Capacidad total: <b><span style='color:white;'>{capacidad_total_f} A</span></b></div>", unsafe_allow_html=True)
-            
-        with c4_h: 
-            if mostrar_tierra:
-                sel_ht = st.number_input("Hilos T:", min_value=1, max_value=99, value=f['eng']['hilos_tierra'], key=f"ht_{f['ct']}_{firma_estado}")
+                eng_in = calcular_ingenieria_trafo_puro(cap_num, v_in_base, tipo_inst)
+                filas_resumen.append({
+                    "tipo": "in", "titulo": f"🟢 Entrada a {modelo_trafo_ui}",
+                    "eng": eng_in, "pr": "PR_TRAFO_IN", "cf": "CF_TRAFO_IN", "ct": "CT_TRAFO_IN", "hf": "HF_TRAFO_IN", "ht": "HT_TRAFO_IN",
+                    "lleva_breaker": True, "idx_tap": i_tap, "suf_llave": suf_llave
+                })
+                
+                eng_out = calcular_ingenieria_trafo_puro(cap_num, v_out_base, tipo_inst)
+                filas_resumen.append({
+                    "tipo": "out", "titulo": f"🟠 Salida de {modelo_trafo_ui}",
+                    "eng": eng_out, "pr": "PR_TRAFO_OUT", "cf": "CF_TRAFO_OUT", "ct": "CT_TRAFO_OUT", "hf": "HF_TRAFO_OUT", "ht": "HT_TRAFO_OUT",
+                    "lleva_breaker": True, "idx_tap": i_tap, "suf_llave": suf_llave
+                })
+            elif tipo_equipo == "AMCR":
+                modelo_amcr_ui = f"AMCR 23{int(kva_u_front):02d}"
+                if trafo_in:
+                    filas_resumen.append({
+                        "tipo": "in", "titulo": f"🟢 Entrada a Transformador ({tipo_trafo_in.split(' ')[0]})",
+                        "eng": calcular_ingenieria_pura(kva_u_front, v_red_base, False, tipo_equipo, tipo_inst),
+                        "pr": "PR_TRAFO_IN", "cf": "CF_TRAFO_IN", "ct": "CT_TRAFO_IN", "hf": "HF_TRAFO_IN", "ht": "HT_TRAFO_IN",
+                        "lleva_breaker": True, "idx_tap": i_tap, "suf_llave": suf_llave
+                    })
+                    filas_resumen.append({
+                        "tipo": "in", "titulo": f"🟢 Entrada del {modelo_amcr_ui} (Desde Trafo)",
+                        "eng": calcular_ingenieria_pura(kva_u_front, v_in_base, False, tipo_equipo, tipo_inst),
+                        "pr": "PR_AMCR_IN", "cf": "CF_AMCR_IN", "ct": "CT_AMCR_IN", "hf": "HF_AMCR_IN", "ht": "HT_AMCR_IN",
+                        "lleva_breaker": False, "idx_tap": i_tap, "suf_llave": suf_llave
+                    })
+                else:
+                    filas_resumen.append({
+                        "tipo": "in", "titulo": f"🟢 Entrada del {modelo_amcr_ui}",
+                        "eng": calcular_ingenieria_pura(kva_u_front, v_in_base, False, tipo_equipo, tipo_inst),
+                        "pr": "PR_AMCR_IN", "cf": "CF_AMCR_IN", "ct": "CT_AMCR_IN", "hf": "HF_AMCR_IN", "ht": "HT_AMCR_IN",
+                        "lleva_breaker": True, "idx_tap": i_tap, "suf_llave": suf_llave
+                    })
+                    
+                filas_resumen.append({
+                    "tipo": "out", "titulo": f"🟠 Salida del {modelo_amcr_ui}",
+                    "eng": calcular_ingenieria_pura(kva_u_front, v_out_base, False, tipo_equipo, tipo_inst),
+                    "pr": "PR_AMCR_OUT", "cf": "CF_AMCR_OUT", "ct": "CT_AMCR_OUT", "hf": "HF_AMCR_OUT", "ht": "HT_AMCR_OUT",
+                    "lleva_breaker": True if filtro == "Ninguno" else False, "idx_tap": i_tap, "suf_llave": suf_llave
+                })
             else:
-                sel_ht = 0
-        with c4_c: 
-            if mostrar_tierra:
-                sel_t = st.selectbox("Calibre Tierra:", options=opciones_tierra_limpias, index=idx_t, key=f"ct_{f['ct']}_{firma_estado}")
-                amp_t_base = extraer_ampacidad(sel_t)
-                capacidad_total_t = amp_t_base * sel_ht
-                st.markdown(f"<div style='font-size:13px; color:#a0aab2; margin-top:-10px; text-align:right;'>⚡ Capacidad total: <b><span style='color:white;'>{capacidad_total_t} A</span></b></div>", unsafe_allow_html=True)
-            else:
-                sel_t = "N/A"
-        
-        proteccion_req = f['eng']['proteccion'] * 2 if f.get('es_neutro') else f['eng']['proteccion']
-        cumple_f = capacidad_total_f > proteccion_req
-        cumple_t = (capacidad_total_t > f['eng']['proteccion']) if mostrar_tierra else True
-        
-        if cumple_f and cumple_t: v_icon, v_color, v_text = "✅", "#38ef7d", "Seguro"
-        else: v_icon, v_color, v_text = "❌", "#ff4b2b", "Riesgo"; hay_riesgo_global = True 
-            
-        with c5:
-            st.markdown(f"""
-            <div style='text-align:center; margin-top:24px; background-color:rgba(255,255,255,0.05); padding:6px; border-radius:8px;'>
-                <div style='font-size:18px; line-height:1;'>{v_icon}</div>
-                <div style='font-size:12px; font-weight:bold; color:{v_color}; margin-top:4px;'>{v_text}</div>
-            </div>""", unsafe_allow_html=True)
+                if tipo_equipo == "CFR":
+                    modelo_ui = f"CFR-IND 13{int(kva_u_front):02d}"
+                else:
+                    familia_str = f" {familia}" if familia not in ["Ninguna", "HF"] else ""
+                    modelo_ui = f"UPS-IND-HF-13{int(kva_u_front):02d}{familia_str}"
 
-        datos[f['pr']] = f['eng']['proteccion'] if lleva_breaker else 0
-        datos[f['cf']] = sel_f.split(" (")[0]
-        datos[f['ct']] = sel_t.split(" (")[0] if sel_t != "N/A" else "N/A"
-        datos[f['hf']] = sel_hf
-        datos[f['ht']] = sel_ht
-        st.write("")
+                if "Paralelo" in topologia and gabconx:
+                    filas_resumen.append({
+                        "tipo": "in", "titulo": f"🟢 Entrada de Red Principal (GABCONX){sufijo_trafo_in}",
+                        "eng": calcular_ingenieria_pura(kva_tot_front, v_gabconx_base, True, tipo_equipo, tipo_inst),
+                        "pr": "PR_GABCONX_IN", "cf": "CF_GABCONX_IN", "ct": "CT_GABCONX_IN", "hf": "HF_GABCONX_IN", "ht": "HT_GABCONX_IN",
+                        "lleva_breaker": True, "idx_tap": i_tap, "suf_llave": suf_llave
+                    })
+
+                sufijo_trafo_ups_in = sufijo_trafo_in if not ("Paralelo" in topologia and gabconx) else ""
+                lleva_brk_in = False if ("Paralelo" in topologia and gabconx) else True
+                filas_resumen.append({
+                    "tipo": "in", "titulo": f"🟢 Entrada de {modelo_ui}{sufijo_trafo_ups_in}",
+                    "eng": calcular_ingenieria_pura(kva_u_front, v_in_base, True, tipo_equipo, tipo_inst),
+                    "pr": "PR_UPS_IN", "cf": "CF_UPS_IN", "ct": "CT_UPS_IN", "hf": "HF_UPS_IN", "ht": "HT_UPS_IN",
+                    "lleva_breaker": lleva_brk_in, "idx_tap": i_tap, "suf_llave": suf_llave
+                })
+
+                sufijo_extras_ups_out = sufijo_trafo_out + sufijo_filtro if "Paralelo" not in topologia else ""
+                lleva_brk_out = False if ("Paralelo" in topologia or filtro != "Ninguno") else True
+                filas_resumen.append({
+                    "tipo": "out", "titulo": f"🟠 Salida de {modelo_ui}{sufijo_extras_ups_out}",
+                    "eng": calcular_ingenieria_pura(kva_u_front, v_out_base, False, tipo_equipo, tipo_inst),
+                    "pr": "PR_UPS_OUT", "cf": "CF_UPS_OUT", "ct": "CT_UPS_OUT", "hf": "HF_UPS_OUT", "ht": "HT_UPS_OUT",
+                    "lleva_breaker": lleva_brk_out, "idx_tap": i_tap, "suf_llave": suf_llave
+                })
+
+                if "Paralelo" in topologia:
+                    filas_resumen.append({
+                        "tipo": "out", "titulo": f"🟠 Salida de Gabinete Paralelo (Carga){sufijo_trafo_out}{sufijo_filtro}",
+                        "eng": calcular_ingenieria_pura(kva_tot_front, v_gabpar_base, False, tipo_equipo, tipo_inst),
+                        "pr": "PR_GABPAR_OUT", "cf": "CF_GABPAR_OUT", "ct": "CT_GABPAR_OUT", "hf": "HF_GABPAR_OUT", "ht": "HT_GABPAR_OUT",
+                        "lleva_breaker": True, "idx_tap": i_tap, "suf_llave": suf_llave
+                    })
+
+            firma_estado = f"{prefix_key}_{tipo_equipo}_{capacidad}_{voltaje_red}_{voltaje_in}_{voltaje_out}_{topologia}_{cantidad_ups}_{gabconx}_{filtro}_{trafo_in}_{trafo_out}_{voltaje_gabconx}_{voltaje_gabpar}_tap{i_tap}"
+            tabla_fase_actual = TABLA_FASE_CHAROLA_75 if tipo_inst == "Charola" else (TABLA_FASE_LIBRE_75 if tipo_inst == "Libre" else TABLA_FASE_NEUTRO)
+            opciones_fase_limpias = [f"{calibre} (Soporta {amp}A)" for calibre, amp in tabla_fase_actual]
+            opciones_tierra_limpias = [f"{calibre} (Soporta {amp}A)" for calibre, amp in TABLA_TIERRA]
+
+            titulo_acordeon = f"⚡ Tensión: {tap_val}" if calc_multivoltaje else "⚡ Ajustes de Calibres y Breakers"
+            
+            with st.expander(titulo_acordeon, expanded=(i_tap == 0)):
+                for f in filas_resumen:
+                    st.markdown(f"**{f['titulo']}**")
+                    c1, c2, c3_h, c3_c, c4_h, c4_c, c5 = st.columns([1.1, 1.1, 0.8, 1.8, 0.8, 1.8, 1])
+                    
+                    lbl_corr = f.get('lbl_corriente', "Corriente entrada (25%)" if f['tipo'] == "in" and tipo_equipo == "UPS" else ("Corriente de entrada" if f['tipo'] == "in" else "Corriente de salida"))
+                    corriente_val = f.get('corriente_str', f"{f['eng']['corriente']} A")
+                    
+                    lleva_breaker = f.get('lleva_breaker', True)
+                    if 'lleva_breaker' not in f:
+                        if f['pr'] == "PR_UPS_IN" and ("Paralelo" in topologia and gabconx): lleva_breaker = False
+                        if f['pr'] == "PR_UPS_OUT" and ("Paralelo" in topologia or filtro != "Ninguno"): lleva_breaker = False
+                        
+                    with c1: 
+                        st.markdown(f"<div style='margin-bottom:5px;'><div style='font-size:14px; color:#a0aab2;'>{lbl_corr}</div><div style='font-size:24px; font-weight:bold; color:white;'>{corriente_val}</div></div>", unsafe_allow_html=True)
+                        
+                    with c2: 
+                        if lleva_breaker:
+                            st.markdown(f"<div style='margin-bottom:5px;'><div style='font-size:14px; color:#a0aab2;'>Protección</div><div style='font-size:24px; font-weight:900; color:#FFD700;'>{f['eng']['proteccion']} A</div></div>", unsafe_allow_html=True)
+                        elif f.get('es_neutro'):
+                            st.markdown("<div style='margin-bottom:5px;'><div style='font-size:14px; color:#a0aab2;'>Protección</div><div style='font-size:24px; font-weight:900; color:#777;'>N/A</div></div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown("<div style='margin-bottom:5px;'><div style='font-size:14px; color:#a0aab2;'>Protección</div><div style='font-size:24px; font-weight:900; color:#777;'>N/A</div></div>", unsafe_allow_html=True)
+                            
+                    lbl_fase = f.get('lbl_fase', "Calibre Fase/Neutro:")
+                    val_fase_eng = f.get('val_fase', f['eng']['calibre_fase'])
+                    val_hf_eng = f.get('val_hf', f['eng']['hilos_fase'])
+                    idx_f = buscar_indice(tabla_fase_actual, val_fase_eng)
+                    
+                    idx_t = buscar_indice(TABLA_TIERRA, f['eng']['tierra'])
+                    mostrar_tierra = f.get('mostrar_tierra', True)
+                    
+                    suf = f.get('suf_llave', '_0')
+                    key_hf = f"hf_{f['cf']}_{firma_estado}{suf}"
+                    key_cf = f"cf_{f['cf']}_{firma_estado}{suf}"
+                    key_ht = f"ht_{f['ct']}_{firma_estado}{suf}"
+                    key_ct = f"ct_{f['ct']}_{firma_estado}{suf}"
+
+                    with c3_h: sel_hf = st.number_input("Hilos:", min_value=1, max_value=99, value=val_hf_eng, key=key_hf)
+                    with c3_c: 
+                        sel_f = st.selectbox(lbl_fase, options=opciones_fase_limpias, index=idx_f, key=key_cf)
+                        amp_f_base = extraer_ampacidad(sel_f)
+                        capacidad_total_f = amp_f_base * sel_hf
+                        st.markdown(f"<div style='font-size:13px; color:#a0aab2; margin-top:-10px; text-align:right;'>⚡ Capacidad total: <b><span style='color:white;'>{capacidad_total_f} A</span></b></div>", unsafe_allow_html=True)
+                        
+                    with c4_h: 
+                        if mostrar_tierra:
+                            sel_ht = st.number_input("Hilos T:", min_value=1, max_value=99, value=f['eng']['hilos_tierra'], key=key_ht)
+                        else:
+                            sel_ht = 0
+                    with c4_c: 
+                        if mostrar_tierra:
+                            sel_t = st.selectbox("Calibre Tierra:", options=opciones_tierra_limpias, index=idx_t, key=key_ct)
+                            amp_t_base = extraer_ampacidad(sel_t)
+                            capacidad_total_t = amp_t_base * sel_ht
+                            st.markdown(f"<div style='font-size:13px; color:#a0aab2; margin-top:-10px; text-align:right;'>⚡ Capacidad total: <b><span style='color:white;'>{capacidad_total_t} A</span></b></div>", unsafe_allow_html=True)
+                        else:
+                            sel_t = "N/A"
+                    
+                    proteccion_req = f['eng']['proteccion'] * 2 if f.get('es_neutro') else f['eng']['proteccion']
+                    cumple_f = capacidad_total_f > proteccion_req
+                    cumple_t = (capacidad_total_t > f['eng']['proteccion']) if mostrar_tierra else True
+                    
+                    if cumple_f and cumple_t: v_icon, v_color, v_text = "✅", "#38ef7d", "Seguro"
+                    else: v_icon, v_color, v_text = "❌", "#ff4b2b", "Riesgo"; hay_riesgo_global = True 
+                        
+                    with c5:
+                        st.markdown(f"""
+                        <div style='text-align:center; margin-top:24px; background-color:rgba(255,255,255,0.05); padding:6px; border-radius:8px;'>
+                            <div style='font-size:18px; line-height:1;'>{v_icon}</div>
+                            <div style='font-size:12px; font-weight:bold; color:{v_color}; margin-top:4px;'>{v_text}</div>
+                        </div>""", unsafe_allow_html=True)
+
+                    if (prefix_key == "charola" or not calc_multivoltaje) and f.get('idx_tap', 0) == 0:
+                        datos[f['pr']] = f['eng']['proteccion'] if lleva_breaker else 0
+                        datos[f['cf']] = sel_f.split(" (")[0]
+                        datos[f['ct']] = sel_t.split(" (")[0] if sel_t != "N/A" else "N/A"
+                        datos[f['hf']] = sel_hf
+                        datos[f['ht']] = sel_ht
+                    st.write("")
+
+    if calc_multivoltaje or calc_75_single:
+        tab_charola, tab_libre = st.tabs(["📌 75°C Charola", "📌 75°C Aire Libre"])
+        with tab_charola: renderizar_tabla_ui("Charola", "charola")
+        with tab_libre: renderizar_tabla_ui("Libre", "libre")
+    else:
+        renderizar_tabla_ui("Defecto", "defecto")
 
 st.markdown("### 📄 Nombre del Diagrama")
 nombre_puro = generar_nombre_base(datos)
+
+if datos.get("Multivoltaje", False):
+    import re
+    taps_t = obtener_familia_voltajes(datos["Voltaje In"])
+    taps_limpios = ",".join(taps_t)
+    if "VN " in nombre_puro:
+        nombre_puro = re.sub(r'VN \S+', f"VN {taps_limpios}", nombre_puro)
+    elif "VE " in nombre_puro:
+        nombre_puro = re.sub(r'VE \S+( \+ VS \S+)?', f"VN {taps_limpios}", nombre_puro)
+
 st.code(nombre_puro, language="plaintext")
 
 if hay_riesgo_global:
