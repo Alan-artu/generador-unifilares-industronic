@@ -2067,7 +2067,15 @@ with col1:
 
         else:
             if tipo_equipo == "UPS":
-                capacidad = st.selectbox("Capacidad UPS:", CAPACIDADES_UPS)
+                cap_estandar = st.selectbox("Capacidad de Línea (KVA):", CAPACIDADES_UPS)
+                cap_custom = st.text_input("Capacidad Especial (KVA) [Opcional]:", placeholder="Ej. 135", help="Si necesitas una capacidad fuera de catálogo, escríbela aquí. De lo contrario, déjalo en blanco.")
+                
+                # Si el usuario escribió un número válido y mayor a 0, usamos esa capacidad. Si no, usamos la estándar.
+                if cap_custom.strip().isdigit() and int(cap_custom.strip()) > 0:
+                    capacidad = f"{int(cap_custom.strip())} KVA"
+                else:
+                    capacidad = cap_estandar
+                    
                 familia = st.selectbox("Familia UPS:", ["M1", "N1", "R1", "MR1", "HF"])
                 opciones_v = TODOS_LOS_VOLTAJES
             elif tipo_equipo == "CFR":
