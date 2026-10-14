@@ -2067,14 +2067,24 @@ with col1:
 
         else:
             if tipo_equipo == "UPS":
-                cap_estandar = st.selectbox("Capacidad de Línea (KVA):", CAPACIDADES_UPS)
-                cap_custom = st.text_input("Capacidad Especial (KVA) [Opcional]:", placeholder="Ej. 135", help="Si necesitas una capacidad fuera de catálogo, escríbela aquí. De lo contrario, déjalo en blanco.")
+                # Agregamos "Otra..." al final de la lista de capacidades
+                opciones_capacidad = CAPACIDADES_UPS + ["Otra..."]
+                cap_seleccionada = st.selectbox("Capacidad UPS:", opciones_capacidad)
                 
-                # Si el usuario escribió un número válido y mayor a 0, usamos esa capacidad. Si no, usamos la estándar.
-                if cap_custom.strip().isdigit() and int(cap_custom.strip()) > 0:
-                    capacidad = f"{int(cap_custom.strip())} KVA"
+                if cap_seleccionada == "Otra...":
+                    with st.container(border=True):
+                        # Título personalizado en amarillo
+                        st.markdown("<p style='color: #FFD700; font-weight: bold; margin-bottom: 5px; font-size: 14px;'>Ingresa la capacidad (KVA):</p>", unsafe_allow_html=True)
+                        # Caja de texto oculta su label nativo para usar el nuestro
+                        cap_custom = st.text_input("cap_oculta", placeholder="Ej. 1250", label_visibility="collapsed")
+                        
+                        # Validamos para evitar errores si lo dejan en blanco o escriben texto
+                        if cap_custom.strip().isdigit() and int(cap_custom.strip()) > 0:
+                            capacidad = f"{int(cap_custom.strip())} KVA"
+                        else:
+                            capacidad = "10 KVA" 
                 else:
-                    capacidad = cap_estandar
+                    capacidad = cap_seleccionada
                     
                 familia = st.selectbox("Familia UPS:", ["M1", "N1", "R1", "MR1", "HF"])
                 opciones_v = TODOS_LOS_VOLTAJES
