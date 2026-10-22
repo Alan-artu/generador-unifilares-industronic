@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 from ezdxf.addons.drawing import RenderContext, Frontend
 from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
 from ezdxf.addons.drawing.config import Configuration, BackgroundPolicy, ColorPolicy
+import matplotlib.pyplot as plt
+plt.rcParams['font.family'] = 'sans-serif'
 
 # ==========================================
 #   BASE DE DATOS TÉCNICA (CALIBRES Y NOM)
