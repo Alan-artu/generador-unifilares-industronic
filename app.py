@@ -5,13 +5,6 @@ import os
 import math
 from datetime import datetime
 import io
-import io
-import matplotlib.pyplot as plt
-from ezdxf.addons.drawing import RenderContext, Frontend
-from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
-from ezdxf.addons.drawing.config import Configuration, BackgroundPolicy, ColorPolicy
-import matplotlib.pyplot as plt
-plt.rcParams['font.family'] = 'sans-serif'
 
 # ==========================================
 #   BASE DE DATOS TÉCNICA (CALIBRES Y NOM)
@@ -833,87 +826,6 @@ def registrar_bloque(doc, archivo_dxf, nombre_bloque):
         return True
     except: return False
 
-def generar_pdf_desde_dxf(doc, doble_hoja=False):
-    """Renderiza un documento DXF a PDF con márgenes matemáticos exactos y centrado perfecto."""
-    from matplotlib.backends.backend_pdf import PdfPages
-    
-    # --- FORZAR TIPOGRAFÍA ESTÁNDAR ---
-    # Reemplazamos las fuentes SHX por una TTF nativa para evitar rectángulos en Streamlit
-    for style in doc.styles:
-        style.dxf.font = "DejaVuSans.ttf"
-    
-    pdf_buffer = io.BytesIO()
-    
-    config = Configuration(
-        background_policy=BackgroundPolicy.CUSTOM,
-        custom_bg_color="#FFFFFF",
-        color_policy=ColorPolicy.BLACK,
-        min_lineweight=0.35,
-        lineweight_scaling=1.2
-    )
-    
-    with PdfPages(pdf_buffer) as pdf:
-        fig = plt.figure()
-        # El lienzo ocupa el 100% de la figura, sin márgenes fantasma
-        ax = fig.add_axes([0, 0, 1, 1])
-        ctx = RenderContext(doc)
-        out = MatplotlibBackend(ax)
-        
-        Frontend(ctx, out, config=config).draw_layout(doc.modelspace(), finalize=True)
-        
-        # Obtenemos los límites exactos de la "tinta" original
-        # Obtenemos los límites exactos de la "tinta" original
-        xmin, xmax = ax.get_xlim()
-        ymin, ymax = ax.get_ylim()
-        
-        # Eliminamos absolutamente todos los márgenes internos
-        ax.set_position([0, 0, 1, 1])
-        ax.set_axis_off()
-        
-        if doble_hoja:
-            ancho_total = xmax - xmin
-            alto_hoja = ymax - ymin
-            
-            # --- AJUSTE ESTABLE PARA PRESENTACIÓN ---
-            # 0.485 toma casi la mitad del dibujo, saltándose un poco del hueco central
-            # para que ambos marcos queden lo más centrados posible sin cortarse.
-            # Puedes subirlo a 0.49 si notas que muerde alguna línea.
-            ajuste_ancho = 0.49 
-            
-            ancho_hoja = ancho_total * ajuste_ancho
-            
-            # Proporción geométrica pura al 100%
-            ratio_hoja = ancho_hoja / alto_hoja
-            alto_pulgadas = 10.0
-            fig.set_size_inches(alto_pulgadas * ratio_hoja, alto_pulgadas)
-            
-            # --- HOJA 1 (Anclada a la extrema izquierda, ignorando el centro) ---
-            ax.set_xlim(xmin, xmin + ancho_hoja)
-            ax.set_ylim(ymin, ymax)
-            pdf.savefig(fig, dpi=300, pad_inches=0.0)
-            
-            # --- HOJA 2 (Anclada a la extrema derecha, ignorando el centro) ---
-            ax.set_xlim(xmax - ancho_hoja, xmax)
-            ax.set_ylim(ymin, ymax)
-            pdf.savefig(fig, dpi=300, pad_inches=0.0)
-            
-        else:
-            # --- HOJA ÚNICA ---
-            ancho_dibujo = xmax - xmin
-            alto_dibujo = ymax - ymin
-            
-            ratio_hoja = ancho_dibujo / alto_dibujo
-            alto_pulgadas = 10.0
-            fig.set_size_inches(alto_pulgadas * ratio_hoja, alto_pulgadas)
-            
-            ax.set_xlim(xmin, xmax)
-            ax.set_ylim(ymin, ymax)
-            pdf.savefig(fig, dpi=300, pad_inches=0.0)
-            
-        plt.close(fig)
-        
-    pdf_buffer.seek(0)
-    return pdf_buffer
 def generar_diagrama_dxf(datos):
     doc = ezdxf.new('R2010', setup=True)
     msp = doc.modelspace()
@@ -2629,37 +2541,16 @@ with col_btn:
     else: generar = st.button("GENERAR PLANO CAD", type="primary", use_container_width=True)
 
 if generar:
-            try:
-                # 1. Generar DXF
-                doc_dxf, nombre_archivo = generar_diagrama_dxf(datos)
-                memoria_dxf = io.StringIO()
-                doc_dxf.write(memoria_dxf)
-                datos_descarga = memoria_dxf.getvalue()
-                
-                # 2. Intentar generar PDF
-                nombre_pdf = nombre_archivo.replace(".dxf", ".pdf")
-                try:
-                    # Detectamos si es modo de 75 grados para activar las dos páginas
-                    es_doble_hoja = "75" in str(datos.get("Modo Calculo", ""))
-                    pdf_buffer = generar_pdf_desde_dxf(doc_dxf, doble_hoja=es_doble_hoja)
-                    pdf_exitoso = True
-                except Exception as e:
-                    pdf_exitoso = False
-                    error_pdf = e
-
-                # 3. Mostrar mensaje
-                with col_msg:
-                    # PEGA AQUÍ TU st.markdown ORIGINAL PARA NO PERDER TU DISEÑO
-                    st.markdown('<div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; text-align: center; padding: 10px;">✅ ¡Generado con éxito!</div>', unsafe_allow_html=True)
-                    if not pdf_exitoso:
-                        st.warning(f"El DXF se generó, pero el PDF falló: {error_pdf}")
-
-                # 4. Mostrar botones (Apilados en la misma columna)
-                with col_descarga:
-                    st.download_button(label="⬇️ Descargar plano (DXF)", data=datos_descarga, file_name=nombre_archivo, mime="application/dxf", use_container_width=True)
-                    
-                    if pdf_exitoso:
-                        st.download_button(label="📄 Descargar documento (PDF)", data=pdf_buffer, file_name=nombre_pdf, mime="application/pdf", use_container_width=True)
-                        
-            except Exception as e:
-                st.error(f"Ocurrió un error al generar el plano. Detalle: {e}")
+    try:
+        doc_dxf, nombre_archivo = generar_diagrama_dxf(datos)
+        memoria_dxf = io.StringIO()
+        doc_dxf.write(memoria_dxf)
+        datos_descarga = memoria_dxf.getvalue()
+        
+        with col_msg:
+            st.markdown('<div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; font-family: \'Nunito\', sans-serif; font-size: 18px; font-weight: 900; height: 58px; display: flex; align-items: center; justify-content: center; margin-top: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); padding: 0; overflow: hidden;">✓ ¡Generado!</div>', unsafe_allow_html=True)
+            
+        with col_descarga:
+            st.download_button(label="📥 Descargar el DXF", data=datos_descarga, file_name=nombre_archivo, mime="application/dxf", use_container_width=True)
+    except Exception as e:
+        st.error(f"Ocurrió un error al generar el plano. Detalle: {e}")
