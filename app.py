@@ -837,6 +837,11 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
     """Renderiza un documento DXF a PDF con márgenes matemáticos exactos y centrado perfecto."""
     from matplotlib.backends.backend_pdf import PdfPages
     
+    # --- FORZAR TIPOGRAFÍA ESTÁNDAR ---
+    # Reemplazamos las fuentes SHX por una TTF nativa para evitar rectángulos en Streamlit
+    for style in doc.styles:
+        style.dxf.font = "DejaVuSans.ttf"
+    
     pdf_buffer = io.BytesIO()
     
     config = Configuration(
