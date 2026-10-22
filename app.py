@@ -858,8 +858,8 @@ def generar_diagrama_dxf(datos):
         "3.-LOS CABLES DE CONEXION ENTRE EL UPS Y EL BANCO DE BATERIAS SON PROPORCIONADOS",
         "   POR INDUSTRONIC.",
         "4.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
-        "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
-        "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
+        "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES",
+        "   Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
         "5.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MAS GRANDE, DEBERAN AJUSTARSE AL",
         "   VALOR MAS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR."
     ]
@@ -1053,6 +1053,10 @@ def generar_diagrama_dxf(datos):
         tamano_fuente_notas = 2.5 * factor_escala
         interlineado_notas = 4.5 * factor_escala
 
+        # --- DEFINICIÓN ESTÁTICA GENERAL DE LA NOTA NORMATIVA ---
+        nota_4_l1 = "   (UTILIZACION) TABLAS 310-16, 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES"
+        nota_4_l2 = "   Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA."
+
         if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
             # --- NOTAS EXCLUSIVAS PARA FILTROS ACTIVOS ---
             notas = [
@@ -1060,8 +1064,8 @@ def generar_diagrama_dxf(datos):
                 "1.-LOS DATOS DE CALIBRE DEL CABLE ES PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
                 "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
                 "2.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
-                "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
-                "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
+                nota_norma_l1,
+                nota_norma_l2,
                 "3.-DONAS DE CORRIENTE INCLUIDAS.",
                 "4.-COLOCAR DONAS DE CORRIENTE DE LADO DE LA CARGA, DE NO SER POSIBLE COLOCARSE",
                 "   DE LADO DE LA RED."
@@ -1080,8 +1084,8 @@ def generar_diagrama_dxf(datos):
                 "1.-LOS DATOS DE CALIBRE DEL CABLE ES PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
                 "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
                 "2.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
-                "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
-                "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
+                nota_norma_l1,
+                nota_norma_l2,
                 "3.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MAS GRANDE, DEBERAN AJUSTARSE AL",
                 "   VALOR MAS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR."
             ]
@@ -1960,11 +1964,11 @@ def generar_diagrama_dxf(datos):
         
         if modo_calculo == "Multivoltaje 75°C":
             # Apiladas verticalmente (una encima de la otra) con ancho completo de 520 para que quepan todos los voltajes
-            y_libre = dibujar_tabla_multi(sec_charola, "TABLA 1: CÁLCULO DE CABLEADO PARA INSTALACIÓN EN CHAROLA (75°C)", y_inicial_tablas, offset_x=0, ancho_total=520)
+            y_libre = dibujar_tabla_multi(sec_charola, "TABLA 1: CÁLCULO DE CABLEADO PARA INSTALACIÓN EN DUCTO (75°C)", y_inicial_tablas, offset_x=0, ancho_total=520)
             dibujar_tabla_multi(sec_libre, "TABLA 2: CÁLCULO DE CABLEADO PARA INSTALACIÓN AL AIRE LIBRE (75°C)", y_libre, offset_x=0, ancho_total=520)
         else:
             # Lado a lado (255 de ancho) para "Temperatura 75°C (Un solo voltaje)" ya que ocupan menos espacio horizontal
-            dibujar_tabla_multi(sec_charola, "TABLA 1: CHAROLA (75°C)", y_inicial_tablas, offset_x=0, ancho_total=255)
+            dibujar_tabla_multi(sec_charola, "TABLA 1: DUCTO (75°C)", y_inicial_tablas, offset_x=0, ancho_total=255)
             dibujar_tabla_multi(sec_libre, "TABLA 2: AIRE LIBRE (75°C)", y_inicial_tablas, offset_x=265, ancho_total=255)
 
     nombre_archivo = nombre_completo + ".dxf"
@@ -2026,7 +2030,7 @@ st.divider()
 # --- FIN DE LA CABECERA ---
 
 # --- ⚙️ OPCIONES AVANZADAS DE INGENIERÍA ---
-with st.expander("⚙️ Opciones Avanzadas de Cálculo", expanded=False):
+with st.expander("⚙️ Otros Calculos", expanded=False):
     modo_calculo = st.radio(
         "Selecciona el modo de cálculo:",
         ["Estándar (90°C)", "Temperatura 75°C (Un solo voltaje)", "Multivoltaje 75°C"],
@@ -2243,6 +2247,7 @@ datos = {
     "Gabinete Doble Trafo": gabinete_trafo, 
     "Topología": "Unitario" if (tipo_equipo == "AMCR" or paralelo_disabled) else topologia, 
     "Cantidad UPS": cantidad_ups, "GABCONX": "Sí" if gabconx else "No", 
+    "Modo Calculo": modo_calculo,
     "Voltaje GABCONX": voltaje_gabconx, "Voltaje GABPAR": voltaje_gabpar,
     "Bypass Externo": "Sí" if bpe and ("Paralelo" not in topologia or paralelo_disabled) else "No",
     "Tipo Batería": bat_tipo, "Ubicación Batería": bat_ubi,
@@ -2502,7 +2507,7 @@ with st.container(border=True):
                     st.write("")
 
     if calc_multivoltaje or calc_75_single:
-        tab_charola, tab_libre = st.tabs(["📌 75°C Charola", "📌 75°C Aire Libre"])
+        tab_charola, tab_libre = st.tabs(["📌 75°C Ducto", "📌 75°C Aire Libre"])
         with tab_charola: renderizar_tabla_ui("Charola", "charola")
         with tab_libre: renderizar_tabla_ui("Libre", "libre")
     else:
