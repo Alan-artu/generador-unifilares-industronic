@@ -843,33 +843,27 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
     import re
     import os
     
-    # --- 1. IGUALAR CONDICIONES LOCALES (FUENTE INCRUSTADA) ---
-    # Obligamos al servidor a usar tu archivo local para que coincida 100% con tu PC
-    ruta_fuente = "arialbd.ttf"  
+    # --- 1. INYECTAR LA FUENTE LOCAL DIRECTAMENTE ---
+    # Este debe ser exactamente el nombre del archivo que subiste a GitHub
+    archivo_fuente = "arialbd.ttf"  
     
-    if os.path.exists(ruta_fuente):
-        # La inyectamos en Matplotlib
-        fm.fontManager.addfont(ruta_fuente)
-        prop = fm.FontProperties(fname=ruta_fuente)
-        nombre_fuente = prop.get_name()
-        
-        # Intentamos inyectarla nativamente en el motor nuevo de ezdxf por seguridad
+    if os.path.exists(archivo_fuente):
+        fm.fontManager.addfont(archivo_fuente)
         try:
             from ezdxf import fonts
-            fonts.font_manager.add_font(ruta_fuente)
+            fonts.font_manager.add_font(archivo_fuente)
         except Exception:
             pass
-    else:
-        nombre_fuente = "sans-serif"
-        
-    # --- 2. APLICAR LIMPIEZA A TODOS LOS ESTILOS Y TEXTOS ---
+            
+    # --- 2. EL SECRETO DE AUTOCAD: USAR LA EXTENSIÓN .TTF ---
+    # AutoCAD exige el nombre del archivo físico para los estilos, no el nombre de la familia.
     for style in doc.styles:
-        style.dxf.font = nombre_fuente
+        style.dxf.font = archivo_fuente
         if style.has_dxf_attrib("shx_file"):
             del style.dxf.shx_file
             
     if "EstiloLimpio" not in doc.styles:
-        doc.styles.new("EstiloLimpio", dxfattribs={"font": nombre_fuente})
+        doc.styles.new("EstiloLimpio", dxfattribs={"font": archivo_fuente})
         
     for layout in [doc.modelspace()] + list(doc.blocks):
         for entity in layout.query('TEXT MTEXT ATTRIB ATTDEF'):
@@ -877,7 +871,7 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
             if entity.dxftype() == 'MTEXT' and hasattr(entity, 'text') and entity.text:
                 entity.text = re.sub(r'\\F[^;]+;', '', entity.text)
                 
-    # --- 3. CONFIGURACIÓN DEL RENDERIZADOR (MÁS NEGRO Y GRUESO) ---            
+    # --- 3. CONFIGURACIÓN DEL RENDERIZADOR ---            
     pdf_buffer = io.BytesIO()
     
     config = Configuration(
