@@ -834,21 +834,33 @@ def registrar_bloque(doc, archivo_dxf, nombre_bloque):
 def generar_pdf_desde_dxf(doc, doble_hoja=False):
     """Renderiza un documento DXF a PDF con márgenes matemáticos exactos y centrado perfecto."""
     from matplotlib.backends.backend_pdf import PdfPages
+    from ezdxf.addons.drawing import RenderContext, Frontend
+    from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+    from ezdxf.addons.drawing.config import Configuration, BackgroundPolicy, ColorPolicy
     import matplotlib.font_manager as fm
+    import matplotlib.pyplot as plt
     import io
     import re
     import os
     
     # --- 1. IGUALAR CONDICIONES LOCALES (FUENTE INCRUSTADA) ---
-    # Ajusta "arialbd.ttf" si decidiste dejarle el nombre original, o pon "arial.ttf" si lo renombraste.
+    # Obligamos al servidor a usar tu archivo local para que coincida 100% con tu PC
     ruta_fuente = "arialbd.ttf"  
     
     if os.path.exists(ruta_fuente):
+        # La inyectamos en Matplotlib
         fm.fontManager.addfont(ruta_fuente)
         prop = fm.FontProperties(fname=ruta_fuente)
         nombre_fuente = prop.get_name()
+        
+        # Intentamos inyectarla nativamente en el motor nuevo de ezdxf por seguridad
+        try:
+            from ezdxf import fonts
+            fonts.font_manager.add_font(ruta_fuente)
+        except Exception:
+            pass
     else:
-        nombre_fuente = "sans-serif" # Respaldo de emergencia
+        nombre_fuente = "sans-serif"
         
     # --- 2. APLICAR LIMPIEZA A TODOS LOS ESTILOS Y TEXTOS ---
     for style in doc.styles:
@@ -865,83 +877,54 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
             if entity.dxftype() == 'MTEXT' and hasattr(entity, 'text') and entity.text:
                 entity.text = re.sub(r'\\F[^;]+;', '', entity.text)
                 
+    # --- 3. CONFIGURACIÓN DEL RENDERIZADOR (MÁS NEGRO Y GRUESO) ---            
     pdf_buffer = io.BytesIO()
     
-    for style in doc.styles:
-        style.dxf.font = fuente_universal
-        if style.has_dxf_attrib("shx_file"):
-            del style.dxf.shx_file
-            
-    if "EstiloLimpio" not in doc.styles:
-        doc.styles.new("EstiloLimpio", dxfattribs={"font": fuente_universal})
-        
-    # --- 2. LIMPIEZA TOTAL (INCLUYENDO GLOBOS Y CAJETINES) ---
-    # Agregamos ATTRIB y ATTDEF para atrapar también los textos dentro de los bloques
-    for layout in [doc.modelspace()] + list(doc.blocks):
-        for entity in layout.query('TEXT MTEXT ATTRIB ATTDEF'):
-            entity.dxf.style = "EstiloLimpio"
-            
-            if entity.dxftype() == 'MTEXT' and hasattr(entity, 'text') and entity.text:
-                entity.text = re.sub(r'\\F[^;]+;', '', entity.text)
-                
-    pdf_buffer = io.BytesIO()
-    
-    # --- 2. AUMENTAR GROSOR DE LÍNEA Y TEXTO ---
     config = Configuration(
         background_policy=BackgroundPolicy.CUSTOM,
         custom_bg_color="#FFFFFF",
         color_policy=ColorPolicy.BLACK,
-        min_lineweight=0.65,      # Aumentado para que los trazos delgados sean más oscuros
-        lineweight_scaling=1.8    # Escala incrementada para darle más peso visual a todo el plano
+        min_lineweight=0.65,      
+        lineweight_scaling=1.8    
     )
     
     with PdfPages(pdf_buffer) as pdf:
         fig = plt.figure()
-        # El lienzo ocupa el 100% de la figura, sin márgenes fantasma
         ax = fig.add_axes([0, 0, 1, 1])
         ctx = RenderContext(doc)
         out = MatplotlibBackend(ax)
         
         Frontend(ctx, out, config=config).draw_layout(doc.modelspace(), finalize=True)
         
-       # Eliminamos absolutamente todos los márgenes internos de Matplotlib
         ax.set_position([0, 0, 1, 1])
         ax.set_axis_off()
         
-        # --- NUEVO SISTEMA DE ENCUADRE PERFECTO ---
-        # Buscamos los bloques del marco (BLK_MARCO) en el documento para anclar la cámara 
-        # exactamente a sus coordenadas, ignorando cualquier dibujo externo que sobresalga.
+        # --- 4. SISTEMA DE ENCUADRE PERFECTO ---
         marcos = [ent for ent in doc.modelspace().query('INSERT') if ent.dxf.name == 'BLK_MARCO']
         marcos.sort(key=lambda m: m.dxf.insert.x)
         
         if marcos:
-            # Extraemos la escala y calculamos las dimensiones exactas del marco
             escala = marcos[0].dxf.xscale
-            margen = 4.0 * escala  # Margen simétrico para los 4 lados
+            margen = 4.0 * escala 
             
             ancho_marco_real = 560.0 * escala  
             alto_marco_real = 430.0 * escala   
             
-            # Sumamos el margen al ancho y alto total de la cámara para que no corte arriba ni a la derecha
             ancho_camara = ancho_marco_real + (margen * 2)
             alto_camara = alto_marco_real + (margen * 2)
             
-            # Proporción física exacta de la hoja
             ratio_hoja = ancho_camara / alto_camara
             alto_pulgadas = 10.0
             fig.set_size_inches(alto_pulgadas * ratio_hoja, alto_pulgadas)
             
-            # Coordenadas maestras del primer marco (recorridas hacia la izquierda y abajo)
             x_origen_h1 = marcos[0].dxf.insert.x - margen
             y_origen_h1 = marcos[0].dxf.insert.y - margen
             
             if doble_hoja and len(marcos) >= 2:
-                # --- HOJA 1: Centrado absoluto en el Marco 1 ---
                 ax.set_xlim(x_origen_h1, x_origen_h1 + ancho_camara)
                 ax.set_ylim(y_origen_h1, y_origen_h1 + alto_camara)
                 pdf.savefig(fig, dpi=300, pad_inches=0.0)
                 
-                # --- HOJA 2: Centrado absoluto en el Marco 2 ---
                 x_origen_h2 = marcos[1].dxf.insert.x - margen
                 y_origen_h2 = marcos[1].dxf.insert.y - margen
                 
@@ -949,12 +932,10 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
                 ax.set_ylim(y_origen_h2, y_origen_h2 + alto_camara)
                 pdf.savefig(fig, dpi=300, pad_inches=0.0)
             else:
-                # --- HOJA ÚNICA: Centrado absoluto en el Marco 1 ---
                 ax.set_xlim(x_origen_h1, x_origen_h1 + ancho_camara)
                 ax.set_ylim(y_origen_h1, y_origen_h1 + alto_camara)
                 pdf.savefig(fig, dpi=300, pad_inches=0.0)
         else:
-            # Fallback de seguridad por si el marco fue renombrado
             xmin, xmax = ax.get_xlim()
             ymin, ymax = ax.get_ylim()
             ax.set_xlim(xmin, xmax)
