@@ -837,20 +837,20 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
     import io
     import re
     
-    # --- 1. ENLACE DIRECTO A LA FUENTE FÍSICA DEL SERVIDOR CLOUD ---
-    # Al usar la tipografía que instalamos vía packages.txt, ezdxf la encontrará 
-    # al escanear el sistema operativo Linux de Streamlit.
-    fuente_nativa = "LiberationSans-Bold.ttf"
-    
-    for style in doc.styles:
-        style.dxf.font = fuente_nativa
-        if style.has_dxf_attrib("shx_file"):
-            del style.dxf.shx_file
-            
-    # --- 2. LIMPIEZA QUIRÚRGICA DE MTEXT (SIN BORRAR TAMAÑOS) ---
+    # --- 1. CREAR UN ESTILO NUEVO Y PURO ---
+    # Abandonamos los estilos contaminados de AutoCAD y creamos uno desde cero.
+    # DejaVuSans-Bold siempre existe porque viene incrustada dentro de matplotlib.
+    if "EstiloLimpio" not in doc.styles:
+        doc.styles.new("EstiloLimpio", dxfattribs={"font": "DejaVuSans-Bold.ttf"})
+        
+    # --- 2. ASIGNAR EL ESTILO NUEVO Y LIMPIAR MTEXT ---
     for layout in [doc.modelspace()] + list(doc.blocks):
-        for entity in layout.query('MTEXT'):
-            if hasattr(entity, 'text') and entity.text:
+        for entity in layout.query('TEXT MTEXT'):
+            # Obligamos a la entidad a soltar su estilo original y usar el puro
+            entity.dxf.style = "EstiloLimpio"
+            
+            # Si es MTEXT, le arrancamos la instrucción de fuente interna sin borrar el texto
+            if entity.dxftype() == 'MTEXT' and hasattr(entity, 'text') and entity.text:
                 entity.text = re.sub(r'\\F[^;]+;', '', entity.text)
                 
     pdf_buffer = io.BytesIO()
