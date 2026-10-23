@@ -836,28 +836,22 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
     from matplotlib.backends.backend_pdf import PdfPages
     import io
     
-    # --- 1. INTERCEPTAR FUENTES SHX (COMPATIBILIDAD MULTIVERSIÓN) ---
+    # --- 1. INTERCEPTAR FUENTES SHX (COMPATIBILIDAD MULTIVERSIÓN Y ANTIFALLOS) ---
     fuente_segura = "DejaVuSans-Bold.ttf"
     
     try:
-        # Intento 1: Ruta para versiones recientes de ezdxf (Streamlit Cloud)
-        from ezdxf import fonts
+        from ezdxf.tools import fonts
         fonts.map_shx_to_ttf("simplex.shx", fuente_segura)
         fonts.map_shx_to_ttf("romans.shx", fuente_segura)
-        fonts.map_shx_to_ttf("txt.shx", fuente_segura)
-        fonts.map_shx_to_ttf("isocp.shx", fuente_segura)
-        fonts.map_shx_to_ttf("monotxt.shx", fuente_segura)
-    except ImportError:
+    except (ImportError, AttributeError):
         try:
-            # Intento 2: Ruta para versiones antiguas (Servidor Local)
-            from ezdxf.tools import fonts
-            fonts.map_shx_to_ttf("simplex.shx", fuente_segura)
-            fonts.map_shx_to_ttf("romans.shx", fuente_segura)
-            fonts.map_shx_to_ttf("txt.shx", fuente_segura)
-            fonts.map_shx_to_ttf("isocp.shx", fuente_segura)
-            fonts.map_shx_to_ttf("monotxt.shx", fuente_segura)
-        except ImportError:
-            pass # Si todo falla, seguimos sin detener la aplicación
+            from ezdxf import fonts
+            if hasattr(fonts, 'map_shx_to_ttf'):
+                fonts.map_shx_to_ttf("simplex.shx", fuente_segura)
+                fonts.map_shx_to_ttf("romans.shx", fuente_segura)
+        except Exception:
+            # Si la versión es muy nueva y eliminaron la función, omitimos sin colapsar el PDF
+            pass
             
     # --- 2. FORZAR TIPOGRAFÍA EN ESTILOS GENERALES ---
     for style in doc.styles:
