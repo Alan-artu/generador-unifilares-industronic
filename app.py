@@ -834,19 +834,31 @@ def registrar_bloque(doc, archivo_dxf, nombre_bloque):
 def generar_pdf_desde_dxf(doc, doble_hoja=False):
     """Renderiza un documento DXF a PDF con márgenes matemáticos exactos y centrado perfecto."""
     from matplotlib.backends.backend_pdf import PdfPages
-    from ezdxf.tools import fonts
     import io
     
-    # --- 1. INTERCEPTAR FUENTES SHX OCULTAS (EL VERDADERO PROBLEMA) ---
-    # Mapeamos globalmente cualquier intento de usar SHX desde textos rebeldes
-    # hacia nuestra fuente segura para evitar los rectángulos de emergencia.
+    # --- 1. INTERCEPTAR FUENTES SHX (COMPATIBILIDAD MULTIVERSIÓN) ---
     fuente_segura = "DejaVuSans-Bold.ttf"
-    fonts.map_shx_to_ttf("simplex.shx", fuente_segura)
-    fonts.map_shx_to_ttf("romans.shx", fuente_segura)
-    fonts.map_shx_to_ttf("txt.shx", fuente_segura)
-    fonts.map_shx_to_ttf("isocp.shx", fuente_segura)
-    fonts.map_shx_to_ttf("monotxt.shx", fuente_segura)
     
+    try:
+        # Intento 1: Ruta para versiones recientes de ezdxf (Streamlit Cloud)
+        from ezdxf import fonts
+        fonts.map_shx_to_ttf("simplex.shx", fuente_segura)
+        fonts.map_shx_to_ttf("romans.shx", fuente_segura)
+        fonts.map_shx_to_ttf("txt.shx", fuente_segura)
+        fonts.map_shx_to_ttf("isocp.shx", fuente_segura)
+        fonts.map_shx_to_ttf("monotxt.shx", fuente_segura)
+    except ImportError:
+        try:
+            # Intento 2: Ruta para versiones antiguas (Servidor Local)
+            from ezdxf.tools import fonts
+            fonts.map_shx_to_ttf("simplex.shx", fuente_segura)
+            fonts.map_shx_to_ttf("romans.shx", fuente_segura)
+            fonts.map_shx_to_ttf("txt.shx", fuente_segura)
+            fonts.map_shx_to_ttf("isocp.shx", fuente_segura)
+            fonts.map_shx_to_ttf("monotxt.shx", fuente_segura)
+        except ImportError:
+            pass # Si todo falla, seguimos sin detener la aplicación
+            
     # --- 2. FORZAR TIPOGRAFÍA EN ESTILOS GENERALES ---
     for style in doc.styles:
         style.dxf.font = fuente_segura
