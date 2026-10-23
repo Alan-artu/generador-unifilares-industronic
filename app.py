@@ -843,27 +843,29 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
     import re
     import os
     
-    # --- 1. INYECTAR LA FUENTE LOCAL DIRECTAMENTE ---
-    # Este debe ser exactamente el nombre del archivo que subiste a GitHub
-    archivo_fuente = "arialbd.ttf"  
+    # --- 1. TRAZADO DE RUTA ABSOLUTA (EL SECRETO PARA LINUX) ---
+    # Obtenemos la ruta física exacta de tu proyecto en el servidor de Streamlit
+    directorio_actual = os.path.dirname(os.path.abspath(__file__))
+    ruta_absoluta_fuente = os.path.join(directorio_actual, "ARIALBD.TTF")
+    nombre_archivo = "ARIALBD.TTF"
     
-    if os.path.exists(archivo_fuente):
-        fm.fontManager.addfont(archivo_fuente)
+    if os.path.exists(ruta_absoluta_fuente):
+        # Inyectamos la ruta física completa en los motores gráficos
+        fm.fontManager.addfont(ruta_absoluta_fuente)
         try:
             from ezdxf import fonts
-            fonts.font_manager.add_font(archivo_fuente)
+            fonts.font_manager.add_font(ruta_absoluta_fuente)
         except Exception:
             pass
             
-    # --- 2. EL SECRETO DE AUTOCAD: USAR LA EXTENSIÓN .TTF ---
-    # AutoCAD exige el nombre del archivo físico para los estilos, no el nombre de la familia.
+    # --- 2. ASIGNACIÓN A LOS ESTILOS Y LIMPIEZA ---
     for style in doc.styles:
-        style.dxf.font = archivo_fuente
+        style.dxf.font = nombre_archivo
         if style.has_dxf_attrib("shx_file"):
             del style.dxf.shx_file
             
     if "EstiloLimpio" not in doc.styles:
-        doc.styles.new("EstiloLimpio", dxfattribs={"font": archivo_fuente})
+        doc.styles.new("EstiloLimpio", dxfattribs={"font": nombre_archivo})
         
     for layout in [doc.modelspace()] + list(doc.blocks):
         for entity in layout.query('TEXT MTEXT ATTRIB ATTDEF'):
