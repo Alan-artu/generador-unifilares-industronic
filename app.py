@@ -834,16 +834,39 @@ def registrar_bloque(doc, archivo_dxf, nombre_bloque):
 def generar_pdf_desde_dxf(doc, doble_hoja=False):
     """Renderiza un documento DXF a PDF con márgenes matemáticos exactos y centrado perfecto."""
     from matplotlib.backends.backend_pdf import PdfPages
+    import matplotlib.font_manager as fm
     import io
     import re
-    import matplotlib.pyplot as plt
+    import os
     
-    # --- 1. DELEGAR TIPOGRAFÍA A MATPLOTLIB (ANTI-FALLOS EN LINUX) ---
-    # Forzamos al motor gráfico a usar su fuente genérica por defecto.
-    # Así, sin importar qué servidor sea, siempre encontrará una fuente válida.
-    plt.rcParams['font.family'] = 'sans-serif'
+    # --- 1. IGUALAR CONDICIONES LOCALES (FUENTE INCRUSTADA) ---
+    # Cargamos el archivo de fuente directamente desde tu proyecto.
+    # Esto elimina por completo la dependencia del sistema operativo del servidor.
+    ruta_fuente = "arial.ttf"  
     
-    fuente_universal = "Arial" # Nombre genérico, no archivo .ttf
+    if os.path.exists(ruta_fuente):
+        fm.fontManager.addfont(ruta_fuente)
+        prop = fm.FontProperties(fname=ruta_fuente)
+        nombre_fuente = prop.get_name()
+    else:
+        nombre_fuente = "sans-serif" # Respaldo de emergencia
+        
+    # --- 2. APLICAR LIMPIEZA A TODOS LOS ESTILOS Y TEXTOS ---
+    for style in doc.styles:
+        style.dxf.font = nombre_fuente
+        if style.has_dxf_attrib("shx_file"):
+            del style.dxf.shx_file
+            
+    if "EstiloLimpio" not in doc.styles:
+        doc.styles.new("EstiloLimpio", dxfattribs={"font": nombre_fuente})
+        
+    for layout in [doc.modelspace()] + list(doc.blocks):
+        for entity in layout.query('TEXT MTEXT ATTRIB ATTDEF'):
+            entity.dxf.style = "EstiloLimpio"
+            if entity.dxftype() == 'MTEXT' and hasattr(entity, 'text') and entity.text:
+                entity.text = re.sub(r'\\F[^;]+;', '', entity.text)
+                
+    pdf_buffer = io.BytesIO()
     
     for style in doc.styles:
         style.dxf.font = fuente_universal
