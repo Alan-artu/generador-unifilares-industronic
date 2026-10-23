@@ -842,7 +842,7 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
     # --- 1. IGUALAR CONDICIONES LOCALES (FUENTE INCRUSTADA) ---
     # Cargamos el archivo de fuente directamente desde tu proyecto.
     # Esto elimina por completo la dependencia del sistema operativo del servidor.
-    ruta_fuente = "arial.ttf"  
+    ruta_fuente = "arialbd.ttf"  
     
     if os.path.exists(ruta_fuente):
         fm.fontManager.addfont(ruta_fuente)
