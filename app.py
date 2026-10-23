@@ -834,17 +834,22 @@ def registrar_bloque(doc, archivo_dxf, nombre_bloque):
 def generar_pdf_desde_dxf(doc, doble_hoja=False):
     """Renderiza un documento DXF a PDF con márgenes matemáticos exactos y centrado perfecto."""
     from matplotlib.backends.backend_pdf import PdfPages
-    import matplotlib
-    import os
+    from ezdxf.tools import fonts
+    import io
     
-    # --- 1. RASTREO DE LA FUENTE FÍSICA ---
-    # Obtenemos la ruta absoluta de la fuente que viene incrustada dentro de matplotlib.
-    # Esto garantiza que Streamlit Cloud la encuentre al 100% sin importar el sistema operativo.
-    ruta_fuente = os.path.join(os.path.dirname(matplotlib.__file__), "mpl-data", "fonts", "ttf", "DejaVuSans-Bold.ttf")
+    # --- 1. INTERCEPTAR FUENTES SHX OCULTAS (EL VERDADERO PROBLEMA) ---
+    # Mapeamos globalmente cualquier intento de usar SHX desde textos rebeldes
+    # hacia nuestra fuente segura para evitar los rectángulos de emergencia.
+    fuente_segura = "DejaVuSans-Bold.ttf"
+    fonts.map_shx_to_ttf("simplex.shx", fuente_segura)
+    fonts.map_shx_to_ttf("romans.shx", fuente_segura)
+    fonts.map_shx_to_ttf("txt.shx", fuente_segura)
+    fonts.map_shx_to_ttf("isocp.shx", fuente_segura)
+    fonts.map_shx_to_ttf("monotxt.shx", fuente_segura)
     
-    # --- 2. FORZAR TIPOGRAFÍA CON RUTA ABSOLUTA Y ELIMINAR SHX ---
+    # --- 2. FORZAR TIPOGRAFÍA EN ESTILOS GENERALES ---
     for style in doc.styles:
-        style.dxf.font = ruta_fuente
+        style.dxf.font = fuente_segura
         if style.has_dxf_attrib("shx_file"):
             del style.dxf.shx_file
             
