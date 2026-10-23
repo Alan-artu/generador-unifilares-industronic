@@ -835,24 +835,24 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
     """Renderiza un documento DXF a PDF con márgenes matemáticos exactos y centrado perfecto."""
     from matplotlib.backends.backend_pdf import PdfPages
     import io
+    import re
     
-    # --- 1. PURGA ABSOLUTA DE FUENTES REBELDES ---
+    # --- 1. CONFIGURACIÓN SEGURA DE ESTILOS ---
     fuente_segura = "DejaVuSans-Bold.ttf"
-    
-    # Limpiar configuración de todos los estilos generales
     for style in doc.styles:
         style.dxf.font = fuente_segura
         if style.has_dxf_attrib("shx_file"):
             del style.dxf.shx_file
             
-    # Rastrear y limpiar el formato oculto dentro de TODOS los textos (Espacio de trabajo y Bloques)
-    # Esto elimina las instrucciones internas como "\Fsimplex.shx;" que causan los rectángulos
+    # --- 2. LIMPIEZA QUIRÚRGICA DE MTEXT (SIN BORRAR TAMAÑOS) ---
+    # Usamos una expresión regular para arrancar SOLO el código de fuente rebelde (\F...;) 
+    # conservando el tamaño, color, saltos de línea y alineación intactos.
     for layout in [doc.modelspace()] + list(doc.blocks):
-        for entity in layout.query('MTEXT TEXT'):
-            if entity.dxftype() == 'MTEXT':
-                entity.text = entity.plain_text() # Extrae solo el texto puro
-            entity.dxf.style = "Standard" # Obliga a usar el estilo que acabamos de limpiar
-            
+        for entity in layout.query('MTEXT'):
+            if hasattr(entity, 'text') and entity.text:
+                # Sustituye cualquier comando \F seguido de texto hasta el ; por vacío
+                entity.text = re.sub(r'\\F[^;]+;', '', entity.text)
+                
     pdf_buffer = io.BytesIO()
     
     # --- 2. AUMENTAR GROSOR DE LÍNEA Y TEXTO ---
