@@ -843,15 +843,23 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
     import re
     import os
     
-    # --- 1. TRAZADO DE RUTA ABSOLUTA (EL SECRETO PARA LINUX) ---
-    # Obtenemos la ruta física exacta de tu proyecto en el servidor de Streamlit
+    # --- 1. TRAZADO DE RUTA ABSOLUTA Y EXTRACCIÓN DEL NOMBRE REAL ---
     directorio_actual = os.path.dirname(os.path.abspath(__file__))
+    # Nombre exacto en mayúsculas como está en tu GitHub para que Linux lo detecte
     ruta_absoluta_fuente = os.path.join(directorio_actual, "ARIALBD.TTF")
-    nombre_archivo = "ARIALBD.TTF"
+    
+    nombre_fuente = "sans-serif" # Respaldo por defecto
     
     if os.path.exists(ruta_absoluta_fuente):
-        # Inyectamos la ruta física completa en los motores gráficos
+        # 1. Agregamos el archivo físico al motor de Matplotlib
         fm.fontManager.addfont(ruta_absoluta_fuente)
+        
+        # 2. EXTRAEMOS EL NOMBRE INTERNO ("Arial") 
+        # Matplotlib exige el nombre de familia, NO el nombre del archivo .TTF
+        prop = fm.FontProperties(fname=ruta_absoluta_fuente)
+        nombre_fuente = prop.get_name()
+        
+        # 3. Lo inyectamos en el motor nuevo de ezdxf por seguridad
         try:
             from ezdxf import fonts
             fonts.font_manager.add_font(ruta_absoluta_fuente)
@@ -859,13 +867,14 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
             pass
             
     # --- 2. ASIGNACIÓN A LOS ESTILOS Y LIMPIEZA ---
+    # Le pasamos el nombre interno limpio, no el nombre del archivo
     for style in doc.styles:
-        style.dxf.font = nombre_archivo
+        style.dxf.font = nombre_fuente
         if style.has_dxf_attrib("shx_file"):
             del style.dxf.shx_file
             
     if "EstiloLimpio" not in doc.styles:
-        doc.styles.new("EstiloLimpio", dxfattribs={"font": nombre_archivo})
+        doc.styles.new("EstiloLimpio", dxfattribs={"font": nombre_fuente})
         
     for layout in [doc.modelspace()] + list(doc.blocks):
         for entity in layout.query('TEXT MTEXT ATTRIB ATTDEF'):
