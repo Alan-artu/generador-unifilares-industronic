@@ -834,11 +834,17 @@ def registrar_bloque(doc, archivo_dxf, nombre_bloque):
 def generar_pdf_desde_dxf(doc, doble_hoja=False):
     """Renderiza un documento DXF a PDF con márgenes matemáticos exactos y centrado perfecto."""
     from matplotlib.backends.backend_pdf import PdfPages
+    import matplotlib
+    import os
     
-    # --- 1. FORZAR TIPOGRAFÍA EN NEGRITAS Y ELIMINAR SHX ---
+    # --- 1. RASTREO DE LA FUENTE FÍSICA ---
+    # Obtenemos la ruta absoluta de la fuente que viene incrustada dentro de matplotlib.
+    # Esto garantiza que Streamlit Cloud la encuentre al 100% sin importar el sistema operativo.
+    ruta_fuente = os.path.join(os.path.dirname(matplotlib.__file__), "mpl-data", "fonts", "ttf", "DejaVuSans-Bold.ttf")
+    
+    # --- 2. FORZAR TIPOGRAFÍA CON RUTA ABSOLUTA Y ELIMINAR SHX ---
     for style in doc.styles:
-        style.dxf.font = "DejaVuSans-Bold.ttf"
-        # Usamos el método correcto de ezdxf para verificar y eliminar el atributo
+        style.dxf.font = ruta_fuente
         if style.has_dxf_attrib("shx_file"):
             del style.dxf.shx_file
             
