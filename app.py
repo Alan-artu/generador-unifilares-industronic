@@ -5,6 +5,11 @@ import os
 import math
 from datetime import datetime
 import io
+import io
+import matplotlib.pyplot as plt
+from ezdxf.addons.drawing import RenderContext, Frontend
+from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+from ezdxf.addons.drawing.config import Configuration, BackgroundPolicy, ColorPolicy
 
 # ==========================================
 #   BASE DE DATOS TÉCNICA (CALIBRES Y NOM)
@@ -826,6 +831,98 @@ def registrar_bloque(doc, archivo_dxf, nombre_bloque):
         return True
     except: return False
 
+def generar_pdf_desde_dxf(doc, doble_hoja=False):
+    """Renderiza un documento DXF a PDF con márgenes matemáticos exactos y centrado perfecto."""
+    from matplotlib.backends.backend_pdf import PdfPages
+    
+    # --- 1. FORZAR TIPOGRAFÍA EN NEGRITAS Y ELIMINAR SHX ---
+    for style in doc.styles:
+        style.dxf.font = "DejaVuSans-Bold.ttf"
+        # Usamos el método correcto de ezdxf para verificar y eliminar el atributo
+        if style.has_dxf_attrib("shx_file"):
+            del style.dxf.shx_file
+            
+    pdf_buffer = io.BytesIO()
+    
+    # --- 2. AUMENTAR GROSOR DE LÍNEA Y TEXTO ---
+    config = Configuration(
+        background_policy=BackgroundPolicy.CUSTOM,
+        custom_bg_color="#FFFFFF",
+        color_policy=ColorPolicy.BLACK,
+        min_lineweight=0.65,      # Aumentado para que los trazos delgados sean más oscuros
+        lineweight_scaling=1.8    # Escala incrementada para darle más peso visual a todo el plano
+    )
+    
+    with PdfPages(pdf_buffer) as pdf:
+        fig = plt.figure()
+        # El lienzo ocupa el 100% de la figura, sin márgenes fantasma
+        ax = fig.add_axes([0, 0, 1, 1])
+        ctx = RenderContext(doc)
+        out = MatplotlibBackend(ax)
+        
+        Frontend(ctx, out, config=config).draw_layout(doc.modelspace(), finalize=True)
+        
+       # Eliminamos absolutamente todos los márgenes internos de Matplotlib
+        ax.set_position([0, 0, 1, 1])
+        ax.set_axis_off()
+        
+        # --- NUEVO SISTEMA DE ENCUADRE PERFECTO ---
+        # Buscamos los bloques del marco (BLK_MARCO) en el documento para anclar la cámara 
+        # exactamente a sus coordenadas, ignorando cualquier dibujo externo que sobresalga.
+        marcos = [ent for ent in doc.modelspace().query('INSERT') if ent.dxf.name == 'BLK_MARCO']
+        marcos.sort(key=lambda m: m.dxf.insert.x)
+        
+        if marcos:
+            # Extraemos la escala y calculamos las dimensiones exactas del marco
+            escala = marcos[0].dxf.xscale
+            margen = 4.0 * escala  # Margen simétrico para los 4 lados
+            
+            ancho_marco_real = 560.0 * escala  
+            alto_marco_real = 430.0 * escala   
+            
+            # Sumamos el margen al ancho y alto total de la cámara para que no corte arriba ni a la derecha
+            ancho_camara = ancho_marco_real + (margen * 2)
+            alto_camara = alto_marco_real + (margen * 2)
+            
+            # Proporción física exacta de la hoja
+            ratio_hoja = ancho_camara / alto_camara
+            alto_pulgadas = 10.0
+            fig.set_size_inches(alto_pulgadas * ratio_hoja, alto_pulgadas)
+            
+            # Coordenadas maestras del primer marco (recorridas hacia la izquierda y abajo)
+            x_origen_h1 = marcos[0].dxf.insert.x - margen
+            y_origen_h1 = marcos[0].dxf.insert.y - margen
+            
+            if doble_hoja and len(marcos) >= 2:
+                # --- HOJA 1: Centrado absoluto en el Marco 1 ---
+                ax.set_xlim(x_origen_h1, x_origen_h1 + ancho_camara)
+                ax.set_ylim(y_origen_h1, y_origen_h1 + alto_camara)
+                pdf.savefig(fig, dpi=300, pad_inches=0.0)
+                
+                # --- HOJA 2: Centrado absoluto en el Marco 2 ---
+                x_origen_h2 = marcos[1].dxf.insert.x - margen
+                y_origen_h2 = marcos[1].dxf.insert.y - margen
+                
+                ax.set_xlim(x_origen_h2, x_origen_h2 + ancho_camara)
+                ax.set_ylim(y_origen_h2, y_origen_h2 + alto_camara)
+                pdf.savefig(fig, dpi=300, pad_inches=0.0)
+            else:
+                # --- HOJA ÚNICA: Centrado absoluto en el Marco 1 ---
+                ax.set_xlim(x_origen_h1, x_origen_h1 + ancho_camara)
+                ax.set_ylim(y_origen_h1, y_origen_h1 + alto_camara)
+                pdf.savefig(fig, dpi=300, pad_inches=0.0)
+        else:
+            # Fallback de seguridad por si el marco fue renombrado
+            xmin, xmax = ax.get_xlim()
+            ymin, ymax = ax.get_ylim()
+            ax.set_xlim(xmin, xmax)
+            ax.set_ylim(ymin, ymax)
+            pdf.savefig(fig, dpi=300, pad_inches=0.0)
+            
+        plt.close(fig)
+        
+    pdf_buffer.seek(0)
+    return pdf_buffer
 def generar_diagrama_dxf(datos):
     doc = ezdxf.new('R2010', setup=True)
     msp = doc.modelspace()
@@ -1054,8 +1151,8 @@ def generar_diagrama_dxf(datos):
         interlineado_notas = 4.5 * factor_escala
 
         # --- DEFINICIÓN ESTÁTICA GENERAL DE LA NOTA NORMATIVA ---
-        nota_4_l1 = "   (UTILIZACION) TABLAS 310-16, 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES"
-        nota_4_l2 = "   Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA."
+        nota_norma_l1 = "   (UTILIZACION) TABLAS 310-16, 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES"
+        nota_norma_l2 = "   Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA."
 
         if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
             # --- NOTAS EXCLUSIVAS PARA FILTROS ACTIVOS ---
@@ -2541,16 +2638,37 @@ with col_btn:
     else: generar = st.button("GENERAR PLANO CAD", type="primary", use_container_width=True)
 
 if generar:
-    try:
-        doc_dxf, nombre_archivo = generar_diagrama_dxf(datos)
-        memoria_dxf = io.StringIO()
-        doc_dxf.write(memoria_dxf)
-        datos_descarga = memoria_dxf.getvalue()
-        
-        with col_msg:
-            st.markdown('<div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; font-family: \'Nunito\', sans-serif; font-size: 18px; font-weight: 900; height: 58px; display: flex; align-items: center; justify-content: center; margin-top: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); padding: 0; overflow: hidden;">✓ ¡Generado!</div>', unsafe_allow_html=True)
-            
-        with col_descarga:
-            st.download_button(label="📥 Descargar el DXF", data=datos_descarga, file_name=nombre_archivo, mime="application/dxf", use_container_width=True)
-    except Exception as e:
-        st.error(f"Ocurrió un error al generar el plano. Detalle: {e}")
+            try:
+                # 1. Generar DXF
+                doc_dxf, nombre_archivo = generar_diagrama_dxf(datos)
+                memoria_dxf = io.StringIO()
+                doc_dxf.write(memoria_dxf)
+                datos_descarga = memoria_dxf.getvalue()
+                
+                # 2. Intentar generar PDF
+                nombre_pdf = nombre_archivo.replace(".dxf", ".pdf")
+                try:
+                    # Detectamos si es modo de 75 grados para activar las dos páginas
+                    es_doble_hoja = "75" in str(datos.get("Modo Calculo", ""))
+                    pdf_buffer = generar_pdf_desde_dxf(doc_dxf, doble_hoja=es_doble_hoja)
+                    pdf_exitoso = True
+                except Exception as e:
+                    pdf_exitoso = False
+                    error_pdf = e
+
+                # 3. Mostrar mensaje
+                with col_msg:
+                    # PEGA AQUÍ TU st.markdown ORIGINAL PARA NO PERDER TU DISEÑO
+                    st.markdown('<div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; text-align: center; padding: 10px;">✅ ¡Generado con éxito!</div>', unsafe_allow_html=True)
+                    if not pdf_exitoso:
+                        st.warning(f"El DXF se generó, pero el PDF falló: {error_pdf}")
+
+                # 4. Mostrar botones (Apilados en la misma columna)
+                with col_descarga:
+                    st.download_button(label="⬇️ Descargar plano (DXF)", data=datos_descarga, file_name=nombre_archivo, mime="application/dxf", use_container_width=True)
+                    
+                    if pdf_exitoso:
+                        st.download_button(label="📄 Descargar documento (PDF)", data=pdf_buffer, file_name=nombre_pdf, mime="application/pdf", use_container_width=True)
+                        
+            except Exception as e:
+                st.error(f"Ocurrió un error al generar el plano. Detalle: {e}")
