@@ -836,20 +836,29 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
     from matplotlib.backends.backend_pdf import PdfPages
     import io
     import re
+    import matplotlib.pyplot as plt
     
-    # --- 1. CREAR UN ESTILO NUEVO Y PURO ---
-    # Abandonamos los estilos contaminados de AutoCAD y creamos uno desde cero.
-    # DejaVuSans-Bold siempre existe porque viene incrustada dentro de matplotlib.
+    # --- 1. DELEGAR TIPOGRAFÍA A MATPLOTLIB (ANTI-FALLOS EN LINUX) ---
+    # Forzamos al motor gráfico a usar su fuente genérica por defecto.
+    # Así, sin importar qué servidor sea, siempre encontrará una fuente válida.
+    plt.rcParams['font.family'] = 'sans-serif'
+    
+    fuente_universal = "Arial" # Nombre genérico, no archivo .ttf
+    
+    for style in doc.styles:
+        style.dxf.font = fuente_universal
+        if style.has_dxf_attrib("shx_file"):
+            del style.dxf.shx_file
+            
     if "EstiloLimpio" not in doc.styles:
-        doc.styles.new("EstiloLimpio", dxfattribs={"font": "DejaVuSans-Bold.ttf"})
+        doc.styles.new("EstiloLimpio", dxfattribs={"font": fuente_universal})
         
-    # --- 2. ASIGNAR EL ESTILO NUEVO Y LIMPIAR MTEXT ---
+    # --- 2. LIMPIEZA TOTAL (INCLUYENDO GLOBOS Y CAJETINES) ---
+    # Agregamos ATTRIB y ATTDEF para atrapar también los textos dentro de los bloques
     for layout in [doc.modelspace()] + list(doc.blocks):
-        for entity in layout.query('TEXT MTEXT'):
-            # Obligamos a la entidad a soltar su estilo original y usar el puro
+        for entity in layout.query('TEXT MTEXT ATTRIB ATTDEF'):
             entity.dxf.style = "EstiloLimpio"
             
-            # Si es MTEXT, le arrancamos la instrucción de fuente interna sin borrar el texto
             if entity.dxftype() == 'MTEXT' and hasattr(entity, 'text') and entity.text:
                 entity.text = re.sub(r'\\F[^;]+;', '', entity.text)
                 
