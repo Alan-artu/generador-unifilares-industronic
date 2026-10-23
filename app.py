@@ -836,28 +836,22 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
     from matplotlib.backends.backend_pdf import PdfPages
     import io
     
-    # --- 1. INTERCEPTAR FUENTES SHX (COMPATIBILIDAD MULTIVERSIÓN Y ANTIFALLOS) ---
+    # --- 1. PURGA ABSOLUTA DE FUENTES REBELDES ---
     fuente_segura = "DejaVuSans-Bold.ttf"
     
-    try:
-        from ezdxf.tools import fonts
-        fonts.map_shx_to_ttf("simplex.shx", fuente_segura)
-        fonts.map_shx_to_ttf("romans.shx", fuente_segura)
-    except (ImportError, AttributeError):
-        try:
-            from ezdxf import fonts
-            if hasattr(fonts, 'map_shx_to_ttf'):
-                fonts.map_shx_to_ttf("simplex.shx", fuente_segura)
-                fonts.map_shx_to_ttf("romans.shx", fuente_segura)
-        except Exception:
-            # Si la versión es muy nueva y eliminaron la función, omitimos sin colapsar el PDF
-            pass
-            
-    # --- 2. FORZAR TIPOGRAFÍA EN ESTILOS GENERALES ---
+    # Limpiar configuración de todos los estilos generales
     for style in doc.styles:
         style.dxf.font = fuente_segura
         if style.has_dxf_attrib("shx_file"):
             del style.dxf.shx_file
+            
+    # Rastrear y limpiar el formato oculto dentro de TODOS los textos (Espacio de trabajo y Bloques)
+    # Esto elimina las instrucciones internas como "\Fsimplex.shx;" que causan los rectángulos
+    for layout in [doc.modelspace()] + list(doc.blocks):
+        for entity in layout.query('MTEXT TEXT'):
+            if entity.dxftype() == 'MTEXT':
+                entity.text = entity.plain_text() # Extrae solo el texto puro
+            entity.dxf.style = "Standard" # Obliga a usar el estilo que acabamos de limpiar
             
     pdf_buffer = io.BytesIO()
     
