@@ -837,20 +837,20 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
     import io
     import re
     
-    # --- 1. CONFIGURACIÓN SEGURA DE ESTILOS ---
-    fuente_segura = "DejaVuSans-Bold.ttf"
+    # --- 1. ENLACE DIRECTO A LA FUENTE FÍSICA DEL SERVIDOR CLOUD ---
+    # Al usar la tipografía que instalamos vía packages.txt, ezdxf la encontrará 
+    # al escanear el sistema operativo Linux de Streamlit.
+    fuente_nativa = "LiberationSans-Bold.ttf"
+    
     for style in doc.styles:
-        style.dxf.font = fuente_segura
+        style.dxf.font = fuente_nativa
         if style.has_dxf_attrib("shx_file"):
             del style.dxf.shx_file
             
     # --- 2. LIMPIEZA QUIRÚRGICA DE MTEXT (SIN BORRAR TAMAÑOS) ---
-    # Usamos una expresión regular para arrancar SOLO el código de fuente rebelde (\F...;) 
-    # conservando el tamaño, color, saltos de línea y alineación intactos.
     for layout in [doc.modelspace()] + list(doc.blocks):
         for entity in layout.query('MTEXT'):
             if hasattr(entity, 'text') and entity.text:
-                # Sustituye cualquier comando \F seguido de texto hasta el ; por vacío
                 entity.text = re.sub(r'\\F[^;]+;', '', entity.text)
                 
     pdf_buffer = io.BytesIO()
