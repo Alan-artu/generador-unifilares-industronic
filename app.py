@@ -1012,7 +1012,7 @@ def generar_diagrama_dxf(datos):
     ]
     
     es_sin_gabconx = datos["GABCONX"] == "No" and "Paralelo" in datos["Topología"]
-    kva_u = float(datos["Capacidad"].replace(" KVA", ""))
+    kva_u = float(str(datos["Capacidad"]).replace(" KVA", ""))
     num_ups = int(datos["Cantidad UPS"])
     kva_tot = kva_u * num_ups if "Paralelo por Capacidad" in datos["Topología"] else kva_u
     
@@ -1063,7 +1063,19 @@ def generar_diagrama_dxf(datos):
     # --- RENDERIZADO RÁPIDO PARA EQUIPOS INDEPENDIENTES (ESTÁTICO) ---
     if datos["Tipo Equipo"] in ["FAA", "CR FA", "TA", "AT"]:
         if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
-            registrar_bloque(doc, "filtro_activo.dxf", "BLK_ESTATICO")
+            
+            # --- NUEVA LÓGICA DE 3 BLOQUES ---
+            cap_final = float(datos["Capacidad"])
+            
+            if datos["Tipo Equipo"] == "FAA":
+                archivo_dxf = "filtro_lado_carga.dxf"
+            elif datos["Tipo Equipo"] == "CR FA":
+                if cap_final in [35.0, 100.0]:
+                    archivo_dxf = "filtro_lado_red.dxf"
+                else:
+                    archivo_dxf = "filtro_lado_red_2.dxf"
+                    
+            registrar_bloque(doc, archivo_dxf, "BLK_ESTATICO")
             msp.add_blockref("BLK_ESTATICO", insert=(0, 0))
         else:
             nombre_bloque_dxf = "diagrama_ta.dxf" if datos["Tipo Equipo"] == "TA" else "diagrama_at.dxf"
@@ -1075,13 +1087,32 @@ def generar_diagrama_dxf(datos):
             msp.add_blockref("BLK_ESTATICO", insert=(23.81, 62)) 
 
         if datos["Tipo Equipo"] in ["FAA", "CR FA"]:
+            # --- TUS 6 VARIABLES DE COORDENADAS PARA LA PROTECCIÓN ---
+            # Ajusta estos números a tu gusto (X positivo = derecha, Y negativo = abajo)
+            X_PROT_CARGA, Y_PROT_CARGA = 40.0, -36.5     # Para filtro_lado_carga (FAA)
+            X_PROT_RED_1, Y_PROT_RED_1 = 37.5, -36.5     # Para filtro_lado_red (CR FA 35 y 100)
+            X_PROT_RED_2, Y_PROT_RED_2 = 42, -28     # Para filtro_lado_red_2 (CR FA otros)
+            
             cap_val = datos["Capacidad"]
             v_in = datos["Voltaje In"]
             eng_f = calcular_ingenieria_filtros(cap_val, v_in, datos["Tipo Equipo"])
             pr_filt = datos.get("PR_FILTRO", eng_f['proteccion'])
-            msp.add_text(f"PROT: 3x{pr_filt} A", height=4.5).set_placement((6, -18))
+            
+            # Lógica para elegir las coordenadas según el equipo y la capacidad
+            cap_final = float(str(cap_val).replace(" KVA", ""))
+            
+            if datos["Tipo Equipo"] == "FAA":
+                x_texto, y_texto = X_PROT_CARGA, Y_PROT_CARGA
+            elif datos["Tipo Equipo"] == "CR FA":
+                if cap_final in [35.0, 100.0]:
+                    x_texto, y_texto = X_PROT_RED_1, Y_PROT_RED_1
+                else:
+                    x_texto, y_texto = X_PROT_RED_2, Y_PROT_RED_2
+                    
+            msp.add_text(f"PROT: 3x{pr_filt} A", height=4.5).set_placement((x_texto, y_texto))
         else:
-            cap_num = int(datos["Capacidad"].replace(" KVA", ""))
+            # Blindaje añadido también aquí por si acaso
+            cap_num = int(str(datos["Capacidad"]).replace(" KVA", ""))
             eng_in = calcular_ingenieria_trafo_puro(cap_num, datos["Voltaje In"])
             eng_out = calcular_ingenieria_trafo_puro(cap_num, datos["Voltaje Out"])
             pr_in = datos.get("PR_TRAFO_IN", eng_in['proteccion'])
@@ -2228,16 +2259,33 @@ with col1:
                 opciones_v = voltajes_h if cap_num >= 400 else TODOS_LOS_VOLTAJES
             elif tipo_equipo == "FAA":
                 familia = "Ninguna"
-                capacidad = st.selectbox("Capacidad FAA (Amp):", sorted(list(set(CAPACIDADES_FAA_L + CAPACIDADES_FAA_H)), key=int))
-                if capacidad in CAPACIDADES_FAA_L and capacidad not in CAPACIDADES_FAA_H: opciones_v = voltajes_l
-                elif capacidad in CAPACIDADES_FAA_H and capacidad not in CAPACIDADES_FAA_L: opciones_v = voltajes_h
-                else: opciones_v = TODOS_LOS_VOLTAJES
+                opciones_faa = sorted(list(set(CAPACIDADES_FAA_L + CAPACIDADES_FAA_H)), key=int)
+                opciones_faa.append("Otra")
+                capacidad_seleccionada = st.selectbox("Capacidad FAA (Amp):", opciones_faa)
+        
+                if capacidad_seleccionada == "Otra":
+                    capacidad = st.number_input("Ingrese la capacidad manual (Amperes):", min_value=1.0, value=60.0, step=1.0)
+                    opciones_v = TODOS_LOS_VOLTAJES
+                else:
+                    capacidad = float(capacidad_seleccionada)
+                    if capacidad_seleccionada in CAPACIDADES_FAA_L and capacidad_seleccionada not in CAPACIDADES_FAA_H: opciones_v = voltajes_l
+                    elif capacidad_seleccionada in CAPACIDADES_FAA_H and capacidad_seleccionada not in CAPACIDADES_FAA_L: opciones_v = voltajes_h
+                    else: opciones_v = TODOS_LOS_VOLTAJES
+            
             else:
                 familia = "Ninguna"
-                capacidad = st.selectbox("Capacidad CR FA (kVAR):", sorted(list(set(CAPACIDADES_CRFA_L + CAPACIDADES_CRFA_H)), key=int))
-                if capacidad in CAPACIDADES_CRFA_L and capacidad not in CAPACIDADES_CRFA_H: opciones_v = voltajes_l
-                elif capacidad in CAPACIDADES_CRFA_H and capacidad not in CAPACIDADES_CRFA_L: opciones_v = voltajes_h
-                else: opciones_v = TODOS_LOS_VOLTAJES
+                opciones_crfa = sorted(list(set(CAPACIDADES_CRFA_L + CAPACIDADES_CRFA_H)), key=int)
+                opciones_crfa.append("Otra")
+                capacidad_seleccionada = st.selectbox("Capacidad CR FA (kVAR):", opciones_crfa)
+        
+                if capacidad_seleccionada == "Otra":
+                    capacidad = st.number_input("Ingrese la capacidad manual (kVAR):", min_value=1.0, value=60.0, step=1.0)
+                    opciones_v = TODOS_LOS_VOLTAJES
+                else:
+                    capacidad = float(capacidad_seleccionada)
+                    if capacidad_seleccionada in CAPACIDADES_CRFA_L and capacidad_seleccionada not in CAPACIDADES_CRFA_H: opciones_v = voltajes_l
+                    elif capacidad_seleccionada in CAPACIDADES_CRFA_H and capacidad_seleccionada not in CAPACIDADES_CRFA_L: opciones_v = voltajes_h
+                    else: opciones_v = TODOS_LOS_VOLTAJES
 
             if tipo_equipo in ["FAA", "CR FA"]:
                 voltaje_in = st.selectbox("Voltaje de Conexión:", opciones_v)
@@ -2392,7 +2440,8 @@ datos = {
 with st.container(border=True):
     st.markdown("### 📊 Resumen de Información (Ajustes de Calibres y Breakers)")
 
-    kva_u_front = float(capacidad.replace(" KVA", ""))
+    # Blindaje: convertimos a string temporalmente por si llega como número puro
+    kva_u_front = float(str(capacidad).replace(" KVA", ""))
     num_ups_front = int(cantidad_ups)
     kva_tot_front = kva_u_front * num_ups_front if "Paralelo por Capacidad" in topologia else kva_u_front
 
