@@ -831,6 +831,111 @@ def registrar_bloque(doc, archivo_dxf, nombre_bloque):
         return True
     except: return False
 
+def generar_imagen_desde_dxf(doc, doble_hoja=False):
+    """Renderiza una vista previa rápida en PNG para la interfaz de Streamlit, soportando doble hoja."""
+    from ezdxf.addons.drawing import RenderContext, Frontend
+    from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+    from ezdxf.addons.drawing.config import Configuration, BackgroundPolicy, ColorPolicy
+    import matplotlib.font_manager as fm
+    import matplotlib.pyplot as plt
+    import io
+    import re
+    import os
+    
+    directorio_actual = os.path.dirname(os.path.abspath(__file__))
+    ruta_absoluta_fuente = os.path.join(directorio_actual, "ARIALBD.TTF")
+    nombre_fuente = "sans-serif"
+    
+    if os.path.exists(ruta_absoluta_fuente):
+        fm.fontManager.addfont(ruta_absoluta_fuente)
+        prop = fm.FontProperties(fname=ruta_absoluta_fuente)
+        nombre_fuente = prop.get_name()
+        try:
+            from ezdxf import fonts
+            fonts.font_manager.add_font(ruta_absoluta_fuente)
+        except Exception: pass
+            
+    for style in doc.styles:
+        style.dxf.font = nombre_fuente
+        if style.has_dxf_attrib("shx_file"): del style.dxf.shx_file
+            
+    if "EstiloLimpio" not in doc.styles: doc.styles.new("EstiloLimpio", dxfattribs={"font": nombre_fuente})
+        
+    for layout in [doc.modelspace()] + list(doc.blocks):
+        for entity in layout.query('TEXT MTEXT ATTRIB ATTDEF'):
+            entity.dxf.style = "EstiloLimpio"
+            if entity.dxftype() == 'MTEXT' and hasattr(entity, 'text') and entity.text:
+                entity.text = re.sub(r'\\F[^;]+;', '', entity.text)
+                
+    config = Configuration(background_policy=BackgroundPolicy.CUSTOM, custom_bg_color="#FFFFFF", color_policy=ColorPolicy.BLACK, min_lineweight=0.65, lineweight_scaling=1.8)
+    
+    fig = plt.figure()
+    ax = fig.add_axes([0, 0, 1, 1])
+    ctx = RenderContext(doc)
+    out = MatplotlibBackend(ax)
+    
+    Frontend(ctx, out, config=config).draw_layout(doc.modelspace(), finalize=True)
+    ax.set_position([0, 0, 1, 1])
+    ax.set_axis_off()
+    
+    marcos = [ent for ent in doc.modelspace().query('INSERT') if ent.dxf.name == 'BLK_MARCO']
+    marcos.sort(key=lambda m: m.dxf.insert.x)
+    
+    imagenes = []
+    
+    if marcos:
+        escala = marcos[0].dxf.xscale
+        margen = 4.0 * escala 
+        ancho_camara = (560.0 * escala) + (margen * 2)
+        alto_camara = (430.0 * escala) + (margen * 2)
+        
+        # EL SECRETO: Ajustamos el marco de la "cámara" para que coincida exactamente
+        # con la proporción geométrica del dibujo. Así evitamos que tome foto de más.
+        fig.set_size_inches(ancho_camara / 100.0, alto_camara / 100.0)
+        
+        # Encuadramos y capturamos la Hoja 1
+        x_origen = marcos[0].dxf.insert.x - margen
+        y_origen = marcos[0].dxf.insert.y - margen
+        ax.set_xlim(x_origen, x_origen + ancho_camara)
+        ax.set_ylim(y_origen, y_origen + alto_camara)
+        
+        img_buffer1 = io.BytesIO()
+        fig.savefig(img_buffer1, format='png', dpi=300, pad_inches=0.0) 
+        img_buffer1.seek(0)
+        imagenes.append(img_buffer1)
+        
+        # Encuadramos y capturamos la Hoja 2 si existe y es necesario
+        if doble_hoja and len(marcos) >= 2:
+            x_origen_h2 = marcos[1].dxf.insert.x - margen
+            y_origen_h2 = marcos[1].dxf.insert.y - margen
+            ax.set_xlim(x_origen_h2, x_origen_h2 + ancho_camara)
+            ax.set_ylim(y_origen_h2, y_origen_h2 + alto_camara)
+            
+            img_buffer2 = io.BytesIO()
+            fig.savefig(img_buffer2, format='png', dpi=300, pad_inches=0.0)
+            img_buffer2.seek(0)
+            imagenes.append(img_buffer2)
+    else:
+        xmin, xmax = ax.get_xlim()
+        ymin, ymax = ax.get_ylim()
+        
+        # También protegemos la escala si no hay marco
+        ancho_libre = xmax - xmin
+        alto_libre = ymax - ymin
+        if ancho_libre > 0 and alto_libre > 0:
+            fig.set_size_inches(ancho_libre / 100.0, alto_libre / 100.0)
+            
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+        
+        img_buffer = io.BytesIO()
+        fig.savefig(img_buffer, format='png', dpi=300, pad_inches=0.0)
+        img_buffer.seek(0)
+        imagenes.append(img_buffer)
+        
+    plt.close(fig)
+    return imagenes
+
 def generar_pdf_desde_dxf(doc, doble_hoja=False):
     """Renderiza un documento DXF a PDF con márgenes matemáticos exactos y centrado perfecto."""
     from matplotlib.backends.backend_pdf import PdfPages
@@ -845,29 +950,19 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
     
     # --- 1. TRAZADO DE RUTA ABSOLUTA Y EXTRACCIÓN DEL NOMBRE REAL ---
     directorio_actual = os.path.dirname(os.path.abspath(__file__))
-    # Nombre exacto en mayúsculas como está en tu GitHub para que Linux lo detecte
     ruta_absoluta_fuente = os.path.join(directorio_actual, "ARIALBD.TTF")
-    
-    nombre_fuente = "sans-serif" # Respaldo por defecto
+    nombre_fuente = "sans-serif" 
     
     if os.path.exists(ruta_absoluta_fuente):
-        # 1. Agregamos el archivo físico al motor de Matplotlib
         fm.fontManager.addfont(ruta_absoluta_fuente)
-        
-        # 2. EXTRAEMOS EL NOMBRE INTERNO ("Arial") 
-        # Matplotlib exige el nombre de familia, NO el nombre del archivo .TTF
         prop = fm.FontProperties(fname=ruta_absoluta_fuente)
         nombre_fuente = prop.get_name()
-        
-        # 3. Lo inyectamos en el motor nuevo de ezdxf por seguridad
         try:
             from ezdxf import fonts
             fonts.font_manager.add_font(ruta_absoluta_fuente)
-        except Exception:
-            pass
+        except Exception: pass
             
     # --- 2. ASIGNACIÓN A LOS ESTILOS Y LIMPIEZA ---
-    # Le pasamos el nombre interno limpio, no el nombre del archivo
     for style in doc.styles:
         style.dxf.font = nombre_fuente
         if style.has_dxf_attrib("shx_file"):
@@ -951,6 +1046,7 @@ def generar_pdf_desde_dxf(doc, doble_hoja=False):
         
     pdf_buffer.seek(0)
     return pdf_buffer
+
 def generar_diagrama_dxf(datos):
     doc = ezdxf.new('R2010', setup=True)
     msp = doc.modelspace()
@@ -2701,13 +2797,97 @@ if datos.get("Multivoltaje", False):
 
 st.code(nombre_puro, language="plaintext")
 
+# --- NUEVO: VISTA PREVIA BAJO DEMANDA ---
+if "preview_generated" not in st.session_state:
+    st.session_state.preview_generated = False
+if "preview_imgs" not in st.session_state:
+    st.session_state.preview_imgs = []
+
+# Inyectamos estilos globales para alinear la fila de cabecera exactamente al centro vertical
+st.markdown("""
+<style>
+    /* Alineación vertical perfecta entre las columnas del encabezado */
+    div[data-testid="stHorizontalBlock"]:has(button[kind="secondary"]) {
+        align-items: center !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(button[kind="secondary"]) div[data-testid="column"] {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+    }
+    button[kind="secondary"] {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%) !important;
+        color: white !important;
+        border: none !important;
+        height: 38px !important;
+        min-height: 38px !important;
+        padding: 0 1rem !important;
+        margin: 0 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    button[kind="secondary"]:hover {
+        transform: scale(1.02) !important;
+        box-shadow: 0 5px 15px rgba(56, 239, 125, 0.4) !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+col_titulo, col_boton, col_vacia = st.columns([1.8, 2, 4])
+
+with col_titulo:
+    st.markdown("<h3 style='margin: 0; padding: 0; line-height: 38px;'>Vista Previa del Plano</h3>", unsafe_allow_html=True)
+
+with col_boton:
+    actualizar = st.button("Actualizar previsualización", type="secondary")
+
+# 2. Lógica de generación de imágenes múltiples
+if actualizar:
+    with st.spinner("Dibujando vista previa en alta calidad..."):
+        try:
+            doc_preview, _ = generar_diagrama_dxf(datos)
+            es_doble_hoja_prev = "75" in str(datos.get("Modo Calculo", ""))
+            
+            # Ahora devuelve una lista de buffers
+            imgs_preview = generar_imagen_desde_dxf(doc_preview, doble_hoja=es_doble_hoja_prev)
+            
+            st.session_state.preview_imgs = imgs_preview
+            st.session_state.preview_generated = True
+        except Exception as e:
+            st.warning(f"No se pudo cargar la vista previa: {e}")
+
+# 3. Proyectamos las imágenes en la interfaz
+if st.session_state.get("preview_imgs"):
+    num_imgs = len(st.session_state.preview_imgs)
+    
+    if num_imgs == 1:
+        # Diseño de una sola hoja (centrada y reducida)
+        c_izq, c_img, c_der = st.columns([1, 2, 1]) 
+        with c_img:
+            st.image(st.session_state.preview_imgs[0], use_container_width=True)
+            
+    elif num_imgs >= 2:
+        # Diseño de dos hojas lado a lado (usamos proporciones para dejar márgenes laterales y centrales)
+        esp_izq, col1, esp_medio, col2, esp_der = st.columns([0.2, 4, 0.2, 4, 0.2])
+        
+        with col1:
+            st.markdown("<div style='text-align: center; color: #a0aab2; margin-bottom: 10px;'><b>--- HOJA 1 ---</b></div>", unsafe_allow_html=True)
+            st.image(st.session_state.preview_imgs[0], use_container_width=True)
+            
+        with col2:
+            st.markdown("<div style='text-align: center; color: #a0aab2; margin-bottom: 10px;'><b>--- HOJA 2 ---</b></div>", unsafe_allow_html=True)
+            st.image(st.session_state.preview_imgs[1], use_container_width=True)
+# -------------------------------------------
+
 if hay_riesgo_global:
     st.error("⚠️ **ALERTA DE SEGURIDAD:** Uno o más calibres seleccionados tienen marca de **Riesgo** (la capacidad del cable es menor o igual a la protección del Breaker).")
     autorizar_riesgo = st.checkbox("Soy consciente del riesgo y autorizo la generación del plano bajo mi propia responsabilidad.")
 else:
     autorizar_riesgo = True 
 
-col_btn, col_msg, col_descarga = st.columns(3)
+# Usamos 3 columnas pero agrupamos las descargas en la central para una armonía vertical
+col_btn, col_descargas, col_vacia = st.columns(3)
 
 with col_btn:
     if hay_riesgo_global and not autorizar_riesgo: generar = st.button("GENERAR PLANO CAD", type="primary", use_container_width=True, disabled=True)
@@ -2715,37 +2895,43 @@ with col_btn:
     else: generar = st.button("GENERAR PLANO CAD", type="primary", use_container_width=True)
 
 if generar:
-            try:
-                # 1. Generar DXF
-                doc_dxf, nombre_archivo = generar_diagrama_dxf(datos)
-                memoria_dxf = io.StringIO()
-                doc_dxf.write(memoria_dxf)
-                datos_descarga = memoria_dxf.getvalue()
+    try:
+        # 1. Generar DXF
+        doc_dxf, nombre_archivo = generar_diagrama_dxf(datos)
+        memoria_dxf = io.StringIO()
+        doc_dxf.write(memoria_dxf)
+        datos_descarga = memoria_dxf.getvalue()
+        
+        # 2. Intentar generar PDF
+        nombre_pdf = nombre_archivo.replace(".dxf", ".pdf")
+        try:
+            es_doble_hoja = "75" in str(datos.get("Modo Calculo", ""))
+            pdf_buffer = generar_pdf_desde_dxf(doc_dxf, doble_hoja=es_doble_hoja)
+            pdf_exitoso = True
+        except Exception as e:
+            pdf_exitoso = False
+            error_pdf = e
+
+        # 3. Agrupamos todos los botones de descarga apilados en la columna central
+        with col_descargas:
+            if not pdf_exitoso:
+                st.warning(f"El DXF se generó, pero el PDF falló: {error_pdf}")
                 
-                # 2. Intentar generar PDF
-                nombre_pdf = nombre_archivo.replace(".dxf", ".pdf")
-                try:
-                    # Detectamos si es modo de 75 grados para activar las dos páginas
-                    es_doble_hoja = "75" in str(datos.get("Modo Calculo", ""))
-                    pdf_buffer = generar_pdf_desde_dxf(doc_dxf, doble_hoja=es_doble_hoja)
-                    pdf_exitoso = True
-                except Exception as e:
-                    pdf_exitoso = False
-                    error_pdf = e
+            st.download_button(label="⬇️ Descargar plano (DXF)", data=datos_descarga, file_name=nombre_archivo, mime="application/dxf", use_container_width=True)
+            
+            if pdf_exitoso:
+                st.download_button(label="📄 Descargar documento (PDF)", data=pdf_buffer, file_name=nombre_pdf, mime="application/pdf", use_container_width=True)
+                
+                import zipfile
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                    zip_file.writestr(nombre_archivo, datos_descarga)
+                    zip_file.writestr(nombre_pdf, pdf_buffer.getvalue())
+                
+                zip_buffer.seek(0)
+                nombre_zip = nombre_archivo.replace(".dxf", ".zip")
+                
+                st.download_button(label="📦 Descargar Ambos (ZIP)", data=zip_buffer, file_name=nombre_zip, mime="application/zip", use_container_width=True)
 
-                # 3. Mostrar mensaje
-                with col_msg:
-                    # PEGA AQUÍ TU st.markdown ORIGINAL PARA NO PERDER TU DISEÑO
-                    st.markdown('<div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; text-align: center; padding: 10px;">✅ ¡Generado con éxito!</div>', unsafe_allow_html=True)
-                    if not pdf_exitoso:
-                        st.warning(f"El DXF se generó, pero el PDF falló: {error_pdf}")
-
-                # 4. Mostrar botones (Apilados en la misma columna)
-                with col_descarga:
-                    st.download_button(label="⬇️ Descargar plano (DXF)", data=datos_descarga, file_name=nombre_archivo, mime="application/dxf", use_container_width=True)
-                    
-                    if pdf_exitoso:
-                        st.download_button(label="📄 Descargar documento (PDF)", data=pdf_buffer, file_name=nombre_pdf, mime="application/pdf", use_container_width=True)
-                        
-            except Exception as e:
-                st.error(f"Ocurrió un error al generar el plano. Detalle: {e}")
+    except Exception as e:
+        st.error(f"Ocurrió un error al generar el plano. Detalle: {e}")
