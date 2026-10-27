@@ -1070,31 +1070,67 @@ def generar_diagrama_dxf(datos):
     # ---------------------------------------------------
 
     # --- DICCIONARIO DE NOTAS DINÁMICAS ---
-    notas_ups = [
-        "NOTAS:",
-        "1.-LOS DATOS DE CALIBRE DE CABLE PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
-        "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
-        "2.-EL NUMERO DE GABINETES DE BATERIAS PUEDE VARIAR SEGUN EL TIEMPO DE RESPALDO",
-        "   (LAS IMAGENES SON SOLO REPRESENTATIVAS).",
-        "3.-LOS CABLES DE CONEXION ENTRE EL UPS Y EL BANCO DE BATERIAS SON PROPORCIONADOS",
-        "   POR INDUSTRONIC.",
-        "4.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
-        "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES",
-        "   Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
-        "5.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MAS GRANDE, DEBERAN AJUSTARSE AL",
-        "   VALOR MAS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR."
-    ]
+    modo_calculo_actual = datos.get("Modo Calculo", "Temperatura 90°C")
+    es_modo_75 = "75" in modo_calculo_actual
 
-    notas_cfr = [
-        "NOTAS:",
-        "1.-LOS DATOS DE CALIBRE DE CABLE PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
-        "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
-        "2.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
-        "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
-        "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
-        "3.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MAS GRANDE, DEBERAN AJUSTARSE AL",
-        "   VALOR MAS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR."
-    ]
+    if es_modo_75:
+        # Texto nuevo para cálculos a 75°C
+        notas_ups = [
+            "NOTAS:",
+            "1.-LOS DATOS DE CALIBRE DE CABLE PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
+            "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
+            "2.-EL NUMERO DE GABINETES DE BATERIAS PUEDE VARIAR SEGUN EL TIEMPO DE RESPALDO",
+            "   (LAS IMAGENES SON SOLO REPRESENTATIVAS).",
+            "3.-LOS CABLES DE CONEXIÓN ENTRE EL UPS Y EL BANCO DE BATERÍAS SON PROPORCIONADOS",
+            "   POR INDUSTRONIC.",
+            "4.-CÁLCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELÉCTRICAS",
+            "   (UTILIZACIÓN) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
+            "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 75° DE TEMPERATURA.",
+            "5.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MÁS GRANDE, DEBERÁN AJUSTARSE AL",
+            "   VALOR MÁS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR"
+        ]
+        
+        notas_cfr = [
+            "NOTAS:",
+            "1.-LOS DATOS DE CALIBRE DE CABLE PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
+            "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
+            "2.-EL NUMERO DE GABINETES DE BATERIAS PUEDE VARIAR SEGUN EL TIEMPO DE RESPALDO",
+            "   (LAS IMAGENES SON SOLO REPRESENTATIVAS).",
+            "3.-LOS CABLES DE CONEXIÓN ENTRE EL CFR Y EL BANCO DE BATERÍAS SON PROPORCIONADOS",
+            "   POR INDUSTRONIC.",
+            "4.-CÁLCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELÉCTRICAS",
+            "   (UTILIZACIÓN) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
+            "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 75° DE TEMPERATURA.",
+            "5.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MÁS GRANDE, DEBERÁN AJUSTARSE AL",
+            "   VALOR MÁS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR"
+        ]
+    else:
+        # Texto original para cálculos estándar a 90°C
+        notas_ups = [
+            "NOTAS:",
+            "1.-LOS DATOS DE CALIBRE DE CABLE PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
+            "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
+            "2.-EL NUMERO DE GABINETES DE BATERIAS PUEDE VARIAR SEGUN EL TIEMPO DE RESPALDO",
+            "   (LAS IMAGENES SON SOLO REPRESENTATIVAS).",
+            "3.-LOS CABLES DE CONEXION ENTRE EL UPS Y EL BANCO DE BATERIAS SON PROPORCIONADOS",
+            "   POR INDUSTRONIC.",
+            "4.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
+            "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES",
+            "   Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
+            "5.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MAS GRANDE, DEBERAN AJUSTARSE AL",
+            "   VALOR MAS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR."
+        ]
+
+        notas_cfr = [
+            "NOTAS:",
+            "1.-LOS DATOS DE CALIBRE DE CABLE PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
+            "   DEL CENTRO DE CARGA AL EQUIPO (CABLE POR EL USUARIO).",
+            "2.-CALCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELECTRICAS",
+            "   (UTILIZACION) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
+            "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 90 ° DE TEMPERATURA.",
+            "3.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MAS GRANDE, DEBERAN AJUSTARSE AL",
+            "   VALOR MAS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR."
+        ]
 
     notas_amcr = [
         "NOTAS:",
@@ -1688,8 +1724,8 @@ def generar_diagrama_dxf(datos):
             msp.add_text(str(indices_tabla[clave]), height=3.5).set_placement((x, y - 1.2), align=TextEntityAlignment.CENTER)
 
     # --- LÓGICA DE CENTRADO UNIFICADA ---
-    modo_calc = datos.get("Modo Calculo", "Estándar (90°C)")
-    requiere_hoja_2 = modo_calc in ["Multivoltaje 75°C", "Temperatura 75°C (Un solo voltaje)"]
+    modo_calc = datos.get("Modo Calculo", "Temperatura 90°C")
+    requiere_hoja_2 = modo_calc in ["Multivoltaje 75°C", "Estándar 75°C (Un solo voltaje)"]
     aplica_multi_centrado = requiere_hoja_2 and (datos["Trafo Entrada"] != "Ninguno" or datos["Trafo Salida"] != "Ninguno")
     
     offset_val = globals().get('OFFSET_X_CENTRADO_MULTIVOLTAJE', -20.0)
@@ -1959,8 +1995,8 @@ def generar_diagrama_dxf(datos):
     t_size = TABLA_TAMANO_TEXTO * factor_escala * factor_compresion
     
     # --- NUEVA LÓGICA DE MODOS DE CÁLCULO ---
-    modo_calculo = datos.get("Modo Calculo", "Estándar (90°C)")
-    requiere_hoja_2 = modo_calculo in ["Multivoltaje 75°C", "Temperatura 75°C (Un solo voltaje)"]
+    modo_calculo = datos.get("Modo Calculo", "Temperatura 90°C")
+    requiere_hoja_2 = modo_calculo in ["Multivoltaje 75°C", "Estándar 75°C (Un solo voltaje)"]
     
     # Si NO requiere Hoja 2, dibujamos la tabla normal en la Hoja 1
     if not requiere_hoja_2:
@@ -2285,12 +2321,13 @@ st.divider()
 with st.expander("⚙️ Otros Calculos", expanded=False):
     modo_calculo = st.radio(
         "Selecciona el modo de cálculo:",
-        ["Estándar (90°C)", "Temperatura 75°C (Un solo voltaje)", "Multivoltaje 75°C"],
+        ["Estándar 75°C (Un solo voltaje)", "Multivoltaje 75°C", "Temperatura 90°C"],
+        index=0,
         horizontal=True
     )
     
 calc_multivoltaje = modo_calculo == "Multivoltaje 75°C"
-calc_75_single = modo_calculo == "Temperatura 75°C (Un solo voltaje)"
+calc_75_single = modo_calculo == "Estándar 75°C (Un solo voltaje)"
 st.write("")
 
 col1, col2, col3, col4 = st.columns(4)
