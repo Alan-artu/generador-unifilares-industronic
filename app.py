@@ -823,8 +823,24 @@ def registrar_bloque(doc, archivo_dxf, nombre_bloque):
         doc_origen = ezdxf.readfile(ruta)
         nuevo_bloque = doc.blocks.new(nombre_bloque)
         entidades_peligrosas = ['SOLID', 'HATCH', 'DIMENSION', 'LEADER', 'MULTILEADER', 'WIPEOUT']
+        
+        # Lista de textos "plantilla" que están en los DXF base y no queremos que se copien
+        textos_fantasma = ["000000"]
+        
         for entity in doc_origen.modelspace():
             if entity.dxftype() not in entidades_peligrosas:
+                
+                # --- FILTRO PARA ELIMINAR TEXTOS EMPALMADOS ---
+                ignorar_entidad = False
+                if entity.dxftype() == 'TEXT' and hasattr(entity.dxf, 'text'):
+                    if str(entity.dxf.text).strip() in textos_fantasma: ignorar_entidad = True
+                elif entity.dxftype() == 'MTEXT' and hasattr(entity, 'text'):
+                    if str(entity.text).strip() in textos_fantasma: ignorar_entidad = True
+                    
+                if ignorar_entidad:
+                    continue  # Brincamos este texto para no copiarlo al plano final
+                # ----------------------------------------------
+                
                 copia = entity.copy()
                 if copia.dxftype() in ['TEXT', 'MTEXT']: copia.dxf.style = 'Standard'
                 nuevo_bloque.add_entity(copia)
@@ -1074,7 +1090,7 @@ def generar_diagrama_dxf(datos):
     es_modo_75 = "75" in modo_calculo_actual
 
     if es_modo_75:
-        # Texto nuevo para cálculos a 75°C
+        # Texto actualizado para cálculos a 75°C
         notas_ups = [
             "NOTAS:",
             "1.-LOS DATOS DE CALIBRE DE CABLE PARA UNA DISTANCIA NO MAYOR A 10 MTS O 30 FT",
@@ -1083,8 +1099,8 @@ def generar_diagrama_dxf(datos):
             "   (LAS IMAGENES SON SOLO REPRESENTATIVAS).",
             "3.-LOS CABLES DE CONEXIÓN ENTRE EL UPS Y EL BANCO DE BATERÍAS SON PROPORCIONADOS",
             "   POR INDUSTRONIC.",
-            "4.-CÁLCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELÉCTRICAS",
-            "   (UTILIZACIÓN) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
+            "4.-CÁLCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012, INSTALACIONES ELÉCTRICAS",
+            "   (UTILIZACIÓN) TABLA 310-17 Y 310-16 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
             "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 75° DE TEMPERATURA.",
             "5.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MÁS GRANDE, DEBERÁN AJUSTARSE AL",
             "   VALOR MÁS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR"
@@ -1098,8 +1114,8 @@ def generar_diagrama_dxf(datos):
             "   (LAS IMAGENES SON SOLO REPRESENTATIVAS).",
             "3.-LOS CABLES DE CONEXIÓN ENTRE EL CFR Y EL BANCO DE BATERÍAS SON PROPORCIONADOS",
             "   POR INDUSTRONIC.",
-            "4.-CÁLCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012 INSTALACIONES ELÉCTRICAS",
-            "   (UTILIZACIÓN) TABLA 310-17 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
+            "4.-CÁLCULO DE CALIBRE DE CABLES BASADO EN NOM-001-SEDE-2012, INSTALACIONES ELÉCTRICAS",
+            "   (UTILIZACIÓN) TABLA 310-17 Y 310-16 MONOCONDUCTORES AISLADOS DE 0 A 2000V NOMINALES AL AIRE",
             "   LIBRE Y TEMPERATURA AMBIENTE 30°, SE CONSIDERA CABLE DE 75° DE TEMPERATURA.",
             "5.-EN CASO DE USAR INTERRUPTORES DE UNA CAPACIDAD MÁS GRANDE, DEBERÁN AJUSTARSE AL",
             "   VALOR MÁS CERCANO INDICADO EN EL DIAGRAMA UNIFILAR"
@@ -2078,7 +2094,7 @@ def generar_diagrama_dxf(datos):
 
     t_nom = msp.add_text(nombre_oficial, height=TAMANO_IDEAL_TITULO * factor_escala * factor_ajuste_titulo)
     t_nom.set_placement((insert_x + (COORD_X_CAJETIN_NOMBRE * factor_escala), insert_y + (COORD_Y_CAJETIN_NOMBRE * factor_escala)))
-    t_nom.dxf.color = 6  
+    t_nom.dxf.color = 6
     t_dib = msp.add_text(datos["Dibujó"], height=TAMANO_TEXTO_FIRMAS * factor_escala)
     t_dib.set_placement((insert_x + (COORD_X_CAJETIN_DIBUJO * factor_escala), insert_y + (COORD_Y_CAJETIN_DIBUJO * factor_escala)))
     t_dib.dxf.color = 4  
@@ -2972,3 +2988,4 @@ if generar:
 
     except Exception as e:
         st.error(f"Ocurrió un error al generar el plano. Detalle: {e}")
+
