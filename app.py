@@ -395,6 +395,13 @@ def obtener_indices_tabla(datos):
     indices['UPS'] = contador; contador += 1
     if datos["Tipo Batería"] != "Ninguna": indices['BATERIAS'] = contador; contador += 1
     indices['SALIDA_UPS'] = contador; contador += 1
+    
+    # 1ro: Procesamos Gabinete de Paralelaje
+    if "Paralelo" in datos["Topología"]:
+        indices['GABPAR'] = contador; contador += 1
+        indices['SALIDA_GABPAR'] = contador; contador += 1
+        
+    # 2do: Procesamos Filtros
     if datos["Filtro"] in ["FAP", "FAPA"]:
         indices['FILTRO'] = contador; contador += 1
         indices['SALIDA_FILTRO'] = contador; contador += 1
@@ -402,9 +409,7 @@ def obtener_indices_tabla(datos):
         indices['ENTRADA_FILTRO_ACC'] = contador; contador += 1
         indices['FILTRO_ACC'] = contador; contador += 1
         indices['CARGA_ACC'] = contador; contador += 1
-    if "Paralelo" in datos["Topología"]:
-        indices['GABPAR'] = contador; contador += 1
-        indices['SALIDA_GABPAR'] = contador; contador += 1
+        
     return indices
 
 def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
@@ -740,53 +745,7 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
     secciones.append({"num": str(contador), "lineas": lineas_salida_ups})
     contador += 1
 
-    if datos["Filtro"] in ["FAP", "FAPA"]:
-        modelo_filtro = obtener_modelo_filtro(datos["Filtro"], kva_u)
-        secciones.append({"num": str(contador), "lineas": [
-            modelo_filtro, "MARCA INDUSTRONIC", f"{kva_u} KVA 3 FASES", f"VOLTAJE NOMINAL: {datos['Voltaje Out']} VCA",
-            "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
-        ]})
-        contador += 1
-        pr_filtro = eng['proteccion']; cf_filtro = eng['calibre_fase']; ct_filtro = eng['tierra']; hf_filtro = eng['hilos_fase']; ht_filtro = eng['hilos_tierra']
-        lineas_salida_filtro = [f"SALIDA {modelo_filtro}", f"VOLTAJE: {datos['Voltaje Out']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE", f"PROTECCIÓN = 3 X {pr_filtro} AMP", f"{hf_filtro * 3}-CABLES CAL. {cf_filtro} ({hf_filtro} X FASE)"]
-        if "D" not in datos["Voltaje Out"]: lineas_salida_filtro.append(f"{hf_filtro}-CABLES CAL. {cf_filtro} (NEUTRO)")
-        lineas_salida_filtro.extend([f"{ht_filtro}-CABLE{'S' if ht_filtro > 1 else ''} CAL. {ct_filtro} (TIERRA)", "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"])
-        secciones.append({"num": str(contador), "lineas": lineas_salida_filtro})
-        contador += 1
-    elif datos["Filtro"] in ["FAA", "CR FA"]:
-        cap_val = datos["Capacidad Filtro Acc"]
-        v_out = datos["Voltaje Out"]
-        sufijo = "L" if any(v in v_out for v in ["208", "220", "240", "120", "127"]) else "H"
-        eng_f = calcular_ingenieria_filtros(cap_val, v_out, datos["Filtro"])
-        pr_filt = datos.get("PR_FILTRO_ACC", eng_f['proteccion']); cf_filt = datos.get("CF_FILTRO_ACC", eng_f['calibre_fase']); cn_filt = datos.get("CN_FILTRO_ACC", eng_f['calibre_neutro']); ct_filt = datos.get("CT_FILTRO_ACC", eng_f['tierra']); hf_filt = datos.get("HF_FILTRO_ACC", eng_f['hilos_fase']); hn_filt = datos.get("HN_FILTRO_ACC", eng_f['hilos_neutro']); ht_filt = datos.get("HT_FILTRO_ACC", eng_f['hilos_tierra'])
-
-        if datos["Filtro"] == "FAA":
-            modelo_f = f"FAA-IND {cap_val}-{sufijo}"
-            txt_comp = f"CORRIENTE DE COMPENSACIÓN MÁXIMA = {cap_val} AMP"
-            txt_eq = f"{cap_val} AMP 3 FASES"
-        else:
-            modelo_f = f"CR FA-IND {cap_val}-{sufijo}"
-            txt_comp = f"POTENCIA REACTIVA COMPENSACION MAXIMA = {cap_val} kVAR"
-            txt_eq = f"{cap_val} kVAR 3 FASES"
-
-        secciones.append({"num": str(contador), "lineas": [f"ENTRADA {modelo_f}", f"VOLTAJE: {v_out}", "CABLEADO FILTRO ACTIVO", txt_comp, f"PROTECCIÓN = 3 X {pr_filt} AMP", f"{hf_filt * 3}-CABLE CAL. {cf_filt} (1 X FASE)" if hf_filt == 1 else f"{hf_filt * 3}-CABLES CAL. {cf_filt} ({hf_filt} X FASE)", f"{hn_filt}-CABLE CAL. {cn_filt} (1 X NEUTRO)" if hn_filt == 1 else f"{hn_filt}-CABLES CAL. {cn_filt} ({hn_filt} X NEUTRO)", f"{ht_filt}-CABLE CAL. {ct_filt} (1 X TIERRA)" if ht_filt == 1 else f"{ht_filt}-CABLES CAL. {ct_filt} ({ht_filt} X TIERRA)", "CABLEADO SUMINISTRADO POR EL USUARIO"]})
-        contador += 1
-        secciones.append({"num": str(contador), "lineas": [modelo_f, "MARCA INDUSTRONIC", txt_eq, f"VOLTAJE NOMINAL: {v_out}"]})
-        contador += 1
-        
-       # Carga No Lineal Espejo
-        pr_espejo = pr_ups if pr_ups > 0 else calcular_ingenieria_pura(kva_u, v_out, False, datos["Tipo Equipo"])['proteccion']
-        
-        lineas_espejo = [
-            "CARGA NO LINEAL", 
-            f"VOLTAJE: {v_out}", 
-            f"PROTECCION: 3 X {pr_espejo} AMP", 
-            "CABLEADO SUMINISTRADO POR EL USUARIO"
-        ]
-        
-        secciones.append({"num": str(contador), "lineas": lineas_espejo})
-        contador += 1
-
+    # --- 1ro: PROCESAMOS GABINETE DE PARALELAJE ---
     if "Paralelo" in datos["Topología"]:
         tipo_par = "REDUNDANCIA" if "Redundante" in datos["Topología"] else "CAPACIDAD"
         secciones.append({"num": str(contador), "lineas": [
@@ -811,6 +770,67 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
             "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
         ])
         secciones.append({"num": str(contador), "lineas": lineas_gabpar})
+        contador += 1
+
+    # --- 2do: PROCESAMOS FILTROS ---
+    if datos["Filtro"] in ["FAP", "FAPA"]:
+        # Para filtros pasivos, asumimos que su kva corresponde a la salida principal
+        kva_filtro = kva_tot if "Paralelo" in datos["Topología"] else kva_u
+        v_filtro_out = datos["Voltaje GABPAR"] if "Paralelo" in datos["Topología"] else datos["Voltaje Out"]
+        
+        modelo_filtro = obtener_modelo_filtro(datos["Filtro"], kva_filtro)
+        secciones.append({"num": str(contador), "lineas": [
+            modelo_filtro, "MARCA INDUSTRONIC", f"{kva_filtro} KVA 3 FASES", f"VOLTAJE NOMINAL: {v_filtro_out} VCA",
+            "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
+        ]})
+        contador += 1
+        
+        eng_f_pasivo = calcular_ingenieria_pura(kva_filtro, v_filtro_out, False, datos["Tipo Equipo"])
+        pr_filtro = eng_f_pasivo['proteccion']
+        cf_filtro = eng_f_pasivo['calibre_fase']
+        ct_filtro = eng_f_pasivo['tierra']
+        hf_filtro = eng_f_pasivo['hilos_fase']
+        ht_filtro = eng_f_pasivo['hilos_tierra']
+        
+        lineas_salida_filtro = [f"SALIDA {modelo_filtro}", f"VOLTAJE: {v_filtro_out} VCA", f"CORRIENTE = {eng_f_pasivo['corriente']} AMP/FASE", f"PROTECCIÓN = 3 X {pr_filtro} AMP", f"{hf_filtro * 3}-CABLES CAL. {cf_filtro} ({hf_filtro} X FASE)"]
+        if "D" not in v_filtro_out: lineas_salida_filtro.append(f"{hf_filtro}-CABLES CAL. {cf_filtro} (NEUTRO)")
+        lineas_salida_filtro.extend([f"{ht_filtro}-CABLE{'S' if ht_filtro > 1 else ''} CAL. {ct_filtro} (TIERRA)", "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"])
+        secciones.append({"num": str(contador), "lineas": lineas_salida_filtro})
+        contador += 1
+        
+    elif datos["Filtro"] in ["FAA", "CR FA"]:
+        cap_val = datos["Capacidad Filtro Acc"]
+        v_out_filtro_acc = datos["Voltaje GABPAR"] if "Paralelo" in datos["Topología"] else datos["Voltaje Out"]
+        sufijo = "L" if any(v in v_out_filtro_acc for v in ["208", "220", "240", "120", "127"]) else "H"
+        eng_f = calcular_ingenieria_filtros(cap_val, v_out_filtro_acc, datos["Filtro"])
+        pr_filt = datos.get("PR_FILTRO_ACC", eng_f['proteccion']); cf_filt = datos.get("CF_FILTRO_ACC", eng_f['calibre_fase']); cn_filt = datos.get("CN_FILTRO_ACC", eng_f['calibre_neutro']); ct_filt = datos.get("CT_FILTRO_ACC", eng_f['tierra']); hf_filt = datos.get("HF_FILTRO_ACC", eng_f['hilos_fase']); hn_filt = datos.get("HN_FILTRO_ACC", eng_f['hilos_neutro']); ht_filt = datos.get("HT_FILTRO_ACC", eng_f['hilos_tierra'])
+
+        if datos["Filtro"] == "FAA":
+            modelo_f = f"FAA-IND {cap_val}-{sufijo}"
+            txt_comp = f"CORRIENTE DE COMPENSACIÓN MÁXIMA = {cap_val} AMP"
+            txt_eq = f"{cap_val} AMP 3 FASES"
+        else:
+            modelo_f = f"CR FA-IND {cap_val}-{sufijo}"
+            txt_comp = f"POTENCIA REACTIVA COMPENSACION MAXIMA = {cap_val} kVAR"
+            txt_eq = f"{cap_val} kVAR 3 FASES"
+
+        secciones.append({"num": str(contador), "lineas": [f"ENTRADA {modelo_f}", f"VOLTAJE: {v_out_filtro_acc}", "CABLEADO FILTRO ACTIVO", txt_comp, f"PROTECCIÓN = 3 X {pr_filt} AMP", f"{hf_filt * 3}-CABLE CAL. {cf_filt} (1 X FASE)" if hf_filt == 1 else f"{hf_filt * 3}-CABLES CAL. {cf_filt} ({hf_filt} X FASE)", f"{hn_filt}-CABLE CAL. {cn_filt} (1 X NEUTRO)" if hn_filt == 1 else f"{hn_filt}-CABLES CAL. {cn_filt} ({hn_filt} X NEUTRO)", f"{ht_filt}-CABLE CAL. {ct_filt} (1 X TIERRA)" if ht_filt == 1 else f"{ht_filt}-CABLES CAL. {ct_filt} ({ht_filt} X TIERRA)", "CABLEADO SUMINISTRADO POR EL USUARIO"]})
+        contador += 1
+        secciones.append({"num": str(contador), "lineas": [modelo_f, "MARCA INDUSTRONIC", txt_eq, f"VOLTAJE NOMINAL: {v_out_filtro_acc}"]})
+        contador += 1
+        
+        # Carga No Lineal Espejo
+        kva_espejo = kva_tot if "Paralelo" in datos["Topología"] else kva_u
+        pr_espejo = pr_par if "Paralelo" in datos["Topología"] else (pr_ups if pr_ups > 0 else calcular_ingenieria_pura(kva_espejo, v_out_filtro_acc, False, datos["Tipo Equipo"])['proteccion'])
+        
+        lineas_espejo = [
+            "CARGA NO LINEAL", 
+            f"VOLTAJE: {v_out_filtro_acc}", 
+            f"PROTECCION: 3 X {pr_espejo} AMP", 
+            "CABLEADO SUMINISTRADO POR EL USUARIO"
+        ]
+        
+        secciones.append({"num": str(contador), "lineas": lineas_espejo})
         contador += 1
 
     return secciones
@@ -3003,4 +3023,3 @@ if generar:
 
     except Exception as e:
         st.error(f"Ocurrió un error al generar el plano. Detalle: {e}")
-
