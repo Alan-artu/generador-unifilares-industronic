@@ -1871,7 +1871,7 @@ def generar_diagrama_dxf(datos):
         if not es_sin_gabconx:
             # Inyección del nuevo bloque TODO EN UNO
             if datos.get("Config Trafo In") == "Individual por UPS" and datos["Trafo Entrada"] != "Ninguno":
-                sufijo_t = "at" if "AT" in datos["Trafo Entrada"] else "ta"
+                sufijo_t = "AT" if "AT" in datos["Trafo Entrada"] else "TA"
                 msp.add_blockref(f"BLK_GABCONX_{num_ups}_{sufijo_t}_INDIV", insert=(x_c, y))
                 dibujar_globo(x_c + OFFSET_GLOBO_GABCONX[0], y + OFFSET_GLOBO_GABCONX[1], 'GABCONX') 
                 # Bajamos el ALTO normal + el espacio extra de los transformadores
@@ -2537,11 +2537,26 @@ with col3:
             config_trafo_in = "Capacidad total del sistema"
 
         filtro = st.selectbox("Filtro de Armónicos/Reactivos:", ["Ninguno", "FAP", "FAPA", "FAA", "CR FA"], disabled=es_filtro)
-        
+            
         if filtro in ["FAA", "CR FA"]:
-            if filtro == "FAA": cap_filtro_acc = st.selectbox("Capacidad FAA (Amp):", sorted(list(set(CAPACIDADES_FAA_L + CAPACIDADES_FAA_H)), key=int))
-            else: cap_filtro_acc = st.selectbox("Capacidad CR FA (kVAR):", sorted(list(set(CAPACIDADES_CRFA_L + CAPACIDADES_CRFA_H)), key=int))
-        else: cap_filtro_acc = "N/A"
+            if filtro == "FAA":
+                opciones_faa = sorted(list(set(CAPACIDADES_FAA_L + CAPACIDADES_FAA_H)), key=int)
+                opciones_faa.append("Otra")
+                cap_sel = st.selectbox("Capacidad FAA (Amp):", opciones_faa)
+                if cap_sel == "Otra":
+                    cap_filtro_acc = str(st.number_input("Ingrese la capacidad manual (Amperes):", min_value=1, value=600, step=1))
+                else:
+                    cap_filtro_acc = cap_sel
+            else:
+                opciones_crfa = sorted(list(set(CAPACIDADES_CRFA_L + CAPACIDADES_CRFA_H)), key=int)
+                opciones_crfa.append("Otra")
+                cap_sel = st.selectbox("Capacidad CR FA (kVAR):", opciones_crfa)
+                if cap_sel == "Otra":
+                    cap_filtro_acc = str(st.number_input("Ingrese la capacidad manual (kVAR):", min_value=1, value=500, step=1))
+                else:
+                    cap_filtro_acc = cap_sel
+        else: 
+            cap_filtro_acc = "N/A"
 
         bpe = st.toggle("Incluir Bypass (BPE)", disabled=(("Paralelo" in topologia and not paralelo_disabled) or es_filtro))
         
