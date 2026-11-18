@@ -396,12 +396,14 @@ def obtener_indices_tabla(datos):
     if datos["Tipo Batería"] != "Ninguna": indices['BATERIAS'] = contador; contador += 1
     indices['SALIDA_UPS'] = contador; contador += 1
     
-    # 1ro: Procesamos Gabinete de Paralelaje
+    # --- 1ro: Procesamos Gabinete de Paralelaje ---
     if "Paralelo" in datos["Topología"]:
         indices['GABPAR'] = contador; contador += 1
-        indices['SALIDA_GABPAR'] = contador; contador += 1
-        
-    # 2do: Procesamos Filtros
+        # Solo numeramos la salida de cables si NO hay filtro
+        if datos["Filtro"] == "Ninguno":
+            indices['SALIDA_GABPAR'] = contador; contador += 1
+            
+    # --- 2do: Procesamos Filtros ---
     if datos["Filtro"] in ["FAP", "FAPA"]:
         indices['FILTRO'] = contador; contador += 1
         indices['SALIDA_FILTRO'] = contador; contador += 1
@@ -745,36 +747,38 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
     secciones.append({"num": str(contador), "lineas": lineas_salida_ups})
     contador += 1
 
-    # --- 1ro: PROCESAMOS GABINETE DE PARALELAJE ---
+    # --- 1ro: PROCESAMOS GABINETE DE PARALELAJE EN LA TABLA ---
     if "Paralelo" in datos["Topología"]:
         tipo_par = "REDUNDANCIA" if "Redundante" in datos["Topología"] else "CAPACIDAD"
         secciones.append({"num": str(contador), "lineas": [
             f"GABINETE DE PARALELAJE POR {tipo_par}", f"CAPACIDAD PARA {kva_tot} KVA", "MARCA INDUSTRONIC"
         ]})
         contador += 1
-        eng = calcular_ingenieria_pura(kva_tot, datos["Voltaje GABPAR"], False, datos["Tipo Equipo"])
-        pr_par = datos.get("PR_GABPAR_OUT", eng['proteccion'])
-        cf_par = datos.get("CF_GABPAR_OUT", eng['calibre_fase'])
-        ct_par = datos.get("CT_GABPAR_OUT", eng['tierra'])
-        hf_par = datos.get("HF_GABPAR_OUT", eng['hilos_fase'])
-        ht_par = datos.get("HT_GABPAR_OUT", eng['hilos_tierra'])
+        
+        # Solo ponemos cables de salida de GABPAR si NO hay filtro
+        if datos["Filtro"] == "Ninguno":
+            eng = calcular_ingenieria_pura(kva_tot, datos["Voltaje GABPAR"], False, datos["Tipo Equipo"])
+            pr_par = datos.get("PR_GABPAR_OUT", eng['proteccion'])
+            cf_par = datos.get("CF_GABPAR_OUT", eng['calibre_fase'])
+            ct_par = datos.get("CT_GABPAR_OUT", eng['tierra'])
+            hf_par = datos.get("HF_GABPAR_OUT", eng['hilos_fase'])
+            ht_par = datos.get("HT_GABPAR_OUT", eng['hilos_tierra'])
 
-        lineas_gabpar = [
-            f"SALIDA GABPAR-13{int(kva_tot)}", f"VOLTAJE: {datos['Voltaje GABPAR']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE",
-            f"PROTECCIÓN = 3 X {pr_par} AMP", f"{hf_par * 3}-CABLES CAL. {cf_par} ({hf_par} X FASE)"
-        ]
-        if "D" not in datos["Voltaje GABPAR"]:
-            lineas_gabpar.append(f"{hf_par}-CABLES CAL. {cf_par} (NEUTRO)")
-        lineas_gabpar.extend([
-            f"{ht_par}-CABLE{'S' if ht_par > 1 else ''} CAL. {ct_par} (TIERRA)",
-            "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
-        ])
-        secciones.append({"num": str(contador), "lineas": lineas_gabpar})
-        contador += 1
+            lineas_gabpar = [
+                f"SALIDA GABPAR-13{int(kva_tot)}", f"VOLTAJE: {datos['Voltaje GABPAR']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE",
+                f"PROTECCIÓN = 3 X {pr_par} AMP", f"{hf_par * 3}-CABLES CAL. {cf_par} ({hf_par} X FASE)"
+            ]
+            if "D" not in datos["Voltaje GABPAR"]:
+                lineas_gabpar.append(f"{hf_par}-CABLES CAL. {cf_par} (NEUTRO)")
+            lineas_gabpar.extend([
+                f"{ht_par}-CABLE{'S' if ht_par > 1 else ''} CAL. {ct_par} (TIERRA)",
+                "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
+            ])
+            secciones.append({"num": str(contador), "lineas": lineas_gabpar})
+            contador += 1
 
-    # --- 2do: PROCESAMOS FILTROS ---
+    # --- 2do: PROCESAMOS FILTROS EN LA TABLA ---
     if datos["Filtro"] in ["FAP", "FAPA"]:
-        # Para filtros pasivos, asumimos que su kva corresponde a la salida principal
         kva_filtro = kva_tot if "Paralelo" in datos["Topología"] else kva_u
         v_filtro_out = datos["Voltaje GABPAR"] if "Paralelo" in datos["Topología"] else datos["Voltaje Out"]
         
@@ -821,7 +825,8 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
         
         # Carga No Lineal Espejo
         kva_espejo = kva_tot if "Paralelo" in datos["Topología"] else kva_u
-        pr_espejo = pr_par if "Paralelo" in datos["Topología"] else (pr_ups if pr_ups > 0 else calcular_ingenieria_pura(kva_espejo, v_out_filtro_acc, False, datos["Tipo Equipo"])['proteccion'])
+        pr_par_temp = calcular_ingenieria_pura(kva_tot, datos["Voltaje GABPAR"], False, datos["Tipo Equipo"])['proteccion']
+        pr_espejo = pr_par_temp if "Paralelo" in datos["Topología"] else (pr_ups if pr_ups > 0 else calcular_ingenieria_pura(kva_espejo, v_out_filtro_acc, False, datos["Tipo Equipo"])['proteccion'])
         
         lineas_espejo = [
             "CARGA NO LINEAL", 
@@ -1987,8 +1992,10 @@ def generar_diagrama_dxf(datos):
     v_out_main = datos["Voltaje GABPAR"] if "Paralelo" in datos["Topología"] else datos["Voltaje Out"]
     lineas_brk_out = generar_texto_breaker(v_out_main, kva_tot, False, breaker_out_dibujo, aplica_multi_out)
     dibujar_textos_breaker(x_c + SEPARACION_TEXTO_X, y - 4, lineas_brk_out)
-    clave_salida = 'SALIDA_GABPAR' if "Paralelo" in datos["Topología"] else ('SALIDA_FILTRO' if datos["Filtro"] != "Ninguno" else 'SALIDA_UPS')
-    dibujar_globo(x_c + OFFSET_GLOBO_SALIDA_FINAL[0], y + OFFSET_GLOBO_SALIDA_FINAL[1], clave_salida) 
+    # PREVENIR EL DOBLE GLOBO: Solo se dibuja si el bloque del filtro activo no lo hizo ya
+    if datos["Filtro"] not in ["FAA", "CR FA"]:
+        clave_salida = 'SALIDA_GABPAR' if "Paralelo" in datos["Topología"] else ('SALIDA_FILTRO' if datos["Filtro"] != "Ninguno" else 'SALIDA_UPS')
+        dibujar_globo(x_c + OFFSET_GLOBO_SALIDA_FINAL[0], y + OFFSET_GLOBO_SALIDA_FINAL[1], clave_salida)
     
     y -= ESPACIO_BREAKER_CARGA
     msp.add_text("SALIDA A CARGA", height=TAMANO_TITULO).set_placement((x_c, y - 10), align=TextEntityAlignment.CENTER)
@@ -2006,13 +2013,30 @@ def generar_diagrama_dxf(datos):
         x_min = offset_paralelo - DISTANCIA_X_BAT - 70
         x_max = abs(offset_paralelo) + 70
 
-    ancho_dibujo = x_max - x_min; centro_x_dibujo = (x_max + x_min) / 2
-    area_util_ancho = 387.89; area_util_alto = 377.07
-    ratio_ancho = ancho_dibujo / area_util_ancho; ratio_alto = alto_dibujo / area_util_alto
+    # Protecciones adicionales de ancho para accesorios grandes (evita que la tabla los aplaste)
+    if datos["Bypass Externo"] == "Sí": x_min = min(x_min, (offset_paralelo if num_ups > 1 else 0) - 200)
+    if datos["Filtro"] in ["FAA", "CR FA"]: x_min = min(x_min, (offset_paralelo if num_ups > 1 else 0) - 150)
+    if datos.get("Multiples Piernas"):
+        x_min = min(x_min, -100); x_max = max(x_max, 100)
+
+    # --- CÁLCULO DE CENTRADO EXACTO (ALINEACIÓN A LA CUADRÍCULA DEL CAJETÍN) ---
+    ancho_dibujo = max(abs(x_min - x_c), abs(x_max - x_c)) * 2 
+    centro_x_dibujo = x_c 
+    
+    # Para la escala seguimos cuidando el espacio libre (para que las baterías no choquen con la tabla)
+    espacio_libre_ancho = 350.0 
+    espacio_libre_alto = 377.07
+    ratio_ancho = ancho_dibujo / espacio_libre_ancho; ratio_alto = alto_dibujo / espacio_libre_alto
     factor_escala = max(1.0, max(ratio_ancho, ratio_alto) * FACTOR_HOLGURA_MARCO)
     
-    cx_area_util_bloque = 154.14 + (area_util_ancho / 2); cy_area_util_bloque = 54.93 + (area_util_alto / 2)
-    insert_x = centro_x_dibujo - (cx_area_util_bloque * factor_escala); insert_y = centro_y_dibujo - (cy_area_util_bloque * factor_escala)
+    # EL SECRETO: Forzamos a que el eje principal del dibujo (x_c) caiga
+    # EXACTAMENTE en la coordenada 280 (el centro absoluto de la hoja de 560 de ancho).
+    # Visualmente, esto clava la columna vertebral en la línea número '4' del marco CAD.
+    cx_centro_absoluto = 280.0
+    cy_centro_absoluto = 215.0
+    
+    insert_x = centro_x_dibujo - (cx_centro_absoluto * factor_escala)
+    insert_y = centro_y_dibujo - (cy_centro_absoluto * factor_escala)
     msp.add_blockref("BLK_MARCO", insert=(insert_x, insert_y), dxfattribs={'xscale': factor_escala, 'yscale': factor_escala, 'zscale': factor_escala})
 
     secciones = generar_secciones_tabla(datos, kva_u, num_ups, kva_tot)
