@@ -1958,8 +1958,10 @@ def generar_diagrama_dxf(datos):
             msp.add_blockref(bloque_principal, insert=(xi, y))
             if i == 0 and datos["GABCONX"] == "Sí":
                 if datos.get("Config Trafo In") == "Individual por UPS" and datos["Trafo Entrada"] != "Ninguno":
-                    dibujar_globo(xi - 15.0, y + 105.0, 'ENTRADA_TRAFO') 
-                    dibujar_globo(xi - 15.0, y + 78.1, 'ENTRADA_UPS') 
+                    # Subimos el globo del trafo al tramo entre el GABCONX y el Transformador
+                    dibujar_globo(xi - 15.0, y + 145.0, 'ENTRADA_TRAFO') 
+                    # Bajamos el globo del UPS al tramo entre el Transformador y el UPS
+                    dibujar_globo(xi - 15.0, y + 35.0, 'ENTRADA_UPS') 
                 else:
                     dibujar_globo(xi + OFFSET_GLOBO_ENTRADA_UPS_PAR[0], y + OFFSET_GLOBO_ENTRADA_UPS_PAR[1], 'ENTRADA_UPS')
             dibujar_globo(xi + OFFSET_GLOBO_UPS[0], y + OFFSET_GLOBO_UPS[1], 'UPS') 
