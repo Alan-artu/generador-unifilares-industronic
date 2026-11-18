@@ -387,8 +387,16 @@ def obtener_indices_tabla(datos):
         return indices
 
     if "Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí":
-        indices['ENTRADA_GABCONX'] = contador; contador += 1
-        indices['GABCONX'] = contador; contador += 1
+        if datos["Trafo Entrada"] != "Ninguno" and datos.get("Config Trafo In") == "Capacidad total del sistema":
+            indices['ENTRADA_TRAFO'] = contador; contador += 1
+            indices['GABCONX'] = contador; contador += 1
+        elif datos["Trafo Entrada"] != "Ninguno" and datos.get("Config Trafo In") == "Individual por UPS":
+            indices['ENTRADA_GABCONX'] = contador; contador += 1
+            indices['GABCONX'] = contador; contador += 1
+            indices['ENTRADA_TRAFO'] = contador; contador += 1
+        else:
+            indices['ENTRADA_GABCONX'] = contador; contador += 1
+            indices['GABCONX'] = contador; contador += 1
     indices['ENTRADA_UPS'] = contador; contador += 1
     if datos["SPV"] == "Sí": indices['SPV'] = contador; contador += 1
     if datos["Bypass Externo"] == "Sí": indices['BPE'] = contador; contador += 1
@@ -630,61 +638,91 @@ def generar_secciones_tabla(datos, kva_u, num_ups, kva_tot):
         fases_txt = "3 FASES"
 
     contador = 1
-    if "Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí":
-        eng = calcular_ingenieria_pura(kva_tot, datos["Voltaje GABCONX"], True, datos["Tipo Equipo"])
-        pr_in = datos.get("PR_GABCONX_IN", eng['proteccion'])
-        cf_in = datos.get("CF_GABCONX_IN", eng['calibre_fase'])
-        ct_in = datos.get("CT_GABCONX_IN", eng['tierra'])
-        
-        # Recuperamos la lógica de los hilos si están definidos
-        hf_in = datos.get("HF_GABCONX_IN", eng['hilos_fase'])
-        ht_in = datos.get("HT_GABCONX_IN", eng['hilos_tierra'])
+    es_trafo_global = datos["Trafo Entrada"] != "Ninguno" and datos.get("Config Trafo In") == "Capacidad total del sistema"
+    es_trafo_indiv = datos["Trafo Entrada"] != "Ninguno" and datos.get("Config Trafo In") == "Individual por UPS"
 
-        lineas_gabconx = [
-            f"ENTRADA A GABINETE DE CONEXION", f"VOLTAJE: {datos['Voltaje GABCONX']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE",
-            f"PROTECCIÓN = 3 X {pr_in} AMP", f"{hf_in * 3}-CABLES CAL. {cf_in} ({hf_in} X FASE)"
-        ]
-        if "D" not in datos["Voltaje GABCONX"]:
-            lineas_gabconx.append(f"{hf_in}-CABLES CAL. {cf_in} (NEUTRO)")
-        lineas_gabconx.extend([
-            f"{ht_in}-CABLE{'S' if ht_in > 1 else ''} CAL. {ct_in} (TIERRA)",
-            "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
-        ])
-        secciones.append({"num": str(contador), "lineas": lineas_gabconx})
-        contador += 1
+    if "Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí":
+        # 1. ENTRADA PRINCIPAL
+        if es_trafo_global:
+            eng = calcular_ingenieria_pura(kva_tot, datos["Voltaje Red"], True, datos["Tipo Equipo"])
+            pr_in = datos.get("PR_TRAFO_IN", eng['proteccion'])
+            cf_in = datos.get("CF_TRAFO_IN", eng['calibre_fase'])
+            ct_in = datos.get("CT_TRAFO_IN", eng['tierra'])
+            hf_in = datos.get("HF_TRAFO_IN", eng['hilos_fase'])
+            ht_in = datos.get("HT_TRAFO_IN", eng['hilos_tierra'])
+            t_tipo = "AT" if "AT" in datos["Trafo Entrada"] else "TA"
+            
+            lineas_in = [
+                f"ENTRADA DE {t_tipo} 30{int(kva_tot):03d}:" if kva_tot >= 100 else f"ENTRADA DE {t_tipo} 300{int(kva_tot):02d}:",
+                f"VOLTAJE: {datos['Voltaje Red']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE",
+                f"PROTECCIÓN = 3 X {pr_in} AMP", f"{hf_in * 3}-CABLES CAL. {cf_in} ({hf_in} X FASE)"
+            ]
+            if "D" not in datos["Voltaje Red"]: lineas_in.append(f"{hf_in}-CABLES CAL. {cf_in} (NEUTRO)")
+            lineas_in.extend([f"{ht_in}-CABLE{'S' if ht_in > 1 else ''} CAL. {ct_in} (TIERRA)", "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"])
+            secciones.append({"num": str(contador), "lineas": lineas_in})
+            contador += 1
+        else:
+            eng = calcular_ingenieria_pura(kva_tot, datos["Voltaje GABCONX"], True, datos["Tipo Equipo"])
+            pr_in = datos.get("PR_GABCONX_IN", eng['proteccion'])
+            cf_in = datos.get("CF_GABCONX_IN", eng['calibre_fase'])
+            ct_in = datos.get("CT_GABCONX_IN", eng['tierra'])
+            hf_in = datos.get("HF_GABCONX_IN", eng['hilos_fase'])
+            ht_in = datos.get("HT_GABCONX_IN", eng['hilos_tierra'])
+            
+            lineas_in = [
+                f"ENTRADA A GABINETE DE CONEXION", f"VOLTAJE: {datos['Voltaje GABCONX']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE",
+                f"PROTECCIÓN = 3 X {pr_in} AMP", f"{hf_in * 3}-CABLES CAL. {cf_in} ({hf_in} X FASE)"
+            ]
+            if "D" not in datos["Voltaje GABCONX"]: lineas_in.append(f"{hf_in}-CABLES CAL. {cf_in} (NEUTRO)")
+            lineas_in.extend([f"{ht_in}-CABLE{'S' if ht_in > 1 else ''} CAL. {ct_in} (TIERRA)", "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"])
+            secciones.append({"num": str(contador), "lineas": lineas_in})
+            contador += 1
+
+        # 2. GABCONX
         secciones.append({"num": str(contador), "lineas": [
-            f"GABINETE DE CONEXION", f"PARA {num_ups} {datos['Tipo Equipo']}-{kva_u} VN: {datos['Voltaje In']} VCA", "MARCA INDUSTRONIC"
+            f"GABINETE DE CONEXION", f"PARA {num_ups} {datos['Tipo Equipo']}-{int(kva_u)} VN: {datos['Voltaje GABCONX']} VCA", "MARCA INDUSTRONIC"
         ]})
         contador += 1
+        
+        # 3. TRAFO INDIVIDUAL (Ocultando protección, CABLEADO INCLUIDO)
+        if es_trafo_indiv:
+            eng = calcular_ingenieria_pura(kva_u, datos["Voltaje GABCONX"], False, datos["Tipo Equipo"])
+            cf_in = datos.get("CF_TRAFO_IN", eng['calibre_fase']); ct_in = datos.get("CT_TRAFO_IN", eng['tierra'])
+            hf_in = datos.get("HF_TRAFO_IN", eng['hilos_fase']); ht_in = datos.get("HT_TRAFO_IN", eng['hilos_tierra'])
+            t_tipo = "AT" if "AT" in datos["Trafo Entrada"] else "TA"
+            
+            lineas_t_indiv = [
+                f"ENTRADA DE {t_tipo} 30{int(kva_u):03d}:" if kva_u >= 100 else f"ENTRADA DE {t_tipo} 300{int(kva_u):02d}:",
+                f"VOLTAJE: {datos['Voltaje GABCONX']} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE",
+                f"{hf_in * 3}-CABLES CAL. {cf_in} ({hf_in} X FASE)"
+            ]
+            if "D" not in datos["Voltaje GABCONX"]: lineas_t_indiv.append(f"{hf_in}-CABLES CAL. {cf_in} (NEUTRO)")
+            lineas_t_indiv.extend([f"{ht_in}-CABLE{'S' if ht_in > 1 else ''} CAL. {ct_in} (TIERRA)", "CABLEADO INCLUIDO"])
+            secciones.append({"num": str(contador), "lineas": lineas_t_indiv})
+            contador += 1
 
-    # Lógica inteligente para transformadores individuales (Voltaje y Título)
-    es_trafo_indiv = datos.get("Config Trafo In") == "Individual por UPS" and datos["Trafo Entrada"] != "Ninguno"
-    voltaje_in_real = datos["Voltaje GABCONX"] if es_trafo_indiv else datos["Voltaje In"]
-
-    eng = calcular_ingenieria_pura(kva_u, voltaje_in_real, True, datos["Tipo Equipo"])
+    # 4. ENTRADA UPS (Ocultando protección si hay GABCONX, CABLEADO INCLUIDO)
+    voltaje_in_real = datos["Voltaje In"]
+    eng = calcular_ingenieria_pura(kva_u, voltaje_in_real, True if not ("Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí") else False, datos["Tipo Equipo"])
     lleva_prot_entrada_ups = not ("Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí")
     pr_in_ups = datos.get("PR_UPS_IN", eng['proteccion']) if lleva_prot_entrada_ups else eng['proteccion']
-    cf_in_ups = datos.get("CF_UPS_IN", eng['calibre_fase'])
-    ct_in_ups = datos.get("CT_UPS_IN", eng['tierra'])
-    hf_in_ups = datos.get("HF_UPS_IN", eng['hilos_fase'])
-    ht_in_ups = datos.get("HT_UPS_IN", eng['hilos_tierra'])
+    cf_in_ups = datos.get("CF_UPS_IN", eng['calibre_fase']); ct_in_ups = datos.get("CT_UPS_IN", eng['tierra'])
+    hf_in_ups = datos.get("HF_UPS_IN", eng['hilos_fase']); ht_in_ups = datos.get("HT_UPS_IN", eng['hilos_tierra'])
 
     titulo_in = f"ENTRADA A {modelo_equipo}" if datos["Tipo Equipo"] == "CFR" else f"ENTRADA DE {modelo_equipo}"
-    if datos["Trafo Entrada"] != "Ninguno" and datos["Tipo Equipo"] == "CFR" and not es_trafo_indiv:
+    if datos["Trafo Entrada"] != "Ninguno" and datos["Tipo Equipo"] == "CFR" and not ("Paralelo" in datos["Topología"]):
         t_tipo = "AT" if "AT" in datos["Trafo Entrada"] else "TA"
         titulo_in += f" / {t_tipo}-30{int(kva_u)}:"
     else:
-        # Si es individual, ocultamos el sufijo del transformador para igualar el PDF
-        titulo_in += "" if es_trafo_indiv else ":"
+        titulo_in += ":"
 
     lineas_entrada_ups = [titulo_in, f"VOLTAJE: {voltaje_in_real} VCA", f"CORRIENTE = {eng['corriente']} AMP/FASE"]
     if lleva_prot_entrada_ups: lineas_entrada_ups.append(f"PROTECCIÓN = 3 X {pr_in_ups} AMP")
     lineas_entrada_ups.append(f"{hf_in_ups * 3}-CABLES CAL. {cf_in_ups} ({hf_in_ups} X FASE)")
-    if "D" not in datos["Voltaje In"]:
-        lineas_entrada_ups.append(f"{hf_in_ups}-CABLES CAL. {cf_in_ups} (NEUTRO)")
+    if "D" not in datos["Voltaje In"]: lineas_entrada_ups.append(f"{hf_in_ups}-CABLES CAL. {cf_in_ups} (NEUTRO)")
     lineas_entrada_ups.extend([
         f"{ht_in_ups}-CABLE{'S' if ht_in_ups > 1 else ''} CAL. {ct_in_ups} (TIERRA)",
-        "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO"
+        "PROTECCIÓN Y CABLEADO SUMINISTRADO POR EL USUARIO" if lleva_prot_entrada_ups else "CABLEADO INCLUIDO"
     ])
     secciones.append({"num": str(contador), "lineas": lineas_entrada_ups})
     contador += 1
@@ -1842,7 +1880,13 @@ def generar_diagrama_dxf(datos):
         kva_main = kva_tot if ("Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí") else kva_u
         lineas_brk = generar_texto_breaker(v_main, kva_main, True, breaker_in_dibujo, aplica_multi)
         dibujar_textos_breaker(x_c + SEPARACION_TEXTO_X, y - 4, lineas_brk)
-        dibujar_globo(x_c + OFFSET_GLOBO_ENTRADA_PRINCIPAL[0], y + OFFSET_GLOBO_ENTRADA_PRINCIPAL[1], clave_entrada) 
+        
+        # Ajuste dinámico del globo de entrada para evitar empalme con el SPV
+        y_globo_entrada = y + OFFSET_GLOBO_ENTRADA_PRINCIPAL[1]
+        if datos["SPV"] == "Sí":
+            y_globo_entrada += 80  # Compensamos la altura exacta que empujó el SPV hacia abajo (2 x ALTO_SPV)
+            
+        dibujar_globo(x_c + OFFSET_GLOBO_ENTRADA_PRINCIPAL[0], y_globo_entrada, clave_entrada)
 
         y -= ESPACIO_BREAKER_PRINCIPAL
         # Condición para NO dibujar el trafo central si se eligió individual
@@ -1854,9 +1898,11 @@ def generar_diagrama_dxf(datos):
             else: bloque_trafo = "BLK_TRAFO_AT" if "AT" in datos["Trafo Entrada"] else "BLK_TRAFO_TA"
             
             msp.add_blockref(bloque_trafo, insert=(x_c, y))
-            # NUEVO GLOBO PARA EL EQUIPO TRANSFORMADOR EN AMCR
+            # GLOBO DEL TRAFO
             if datos["Tipo Equipo"] == "AMCR":
                 dibujar_globo(x_c + 20, y - 30, 'TRAFO') 
+            elif "Paralelo" in datos["Topología"] and datos["GABCONX"] == "Sí":
+                dibujar_globo(x_c + OFFSET_GLOBO_ENTRADA_PRINCIPAL[0], y - 25, 'ENTRADA_TRAFO')
                 
             y -= ALTO_TRAFO_EXTERNO
             
@@ -1911,12 +1957,10 @@ def generar_diagrama_dxf(datos):
             xi = x_c + offset + (i * ESPACIO_PARALELO)
             msp.add_blockref(bloque_principal, insert=(xi, y))
             if i == 0 and datos["GABCONX"] == "Sí":
-                # Condición inteligente para el Globo 3 (Entrada UPS)
                 if datos.get("Config Trafo In") == "Individual por UPS" and datos["Trafo Entrada"] != "Ninguno":
-                    # Coordenadas EXCLUSIVAS para trafos individuales (Más arriba y a la izquierda)
+                    dibujar_globo(xi - 15.0, y + 105.0, 'ENTRADA_TRAFO') 
                     dibujar_globo(xi - 15.0, y + 78.1, 'ENTRADA_UPS') 
                 else:
-                    # Coordenadas NORMALES para el resto de los diagramas
                     dibujar_globo(xi + OFFSET_GLOBO_ENTRADA_UPS_PAR[0], y + OFFSET_GLOBO_ENTRADA_UPS_PAR[1], 'ENTRADA_UPS')
             dibujar_globo(xi + OFFSET_GLOBO_UPS[0], y + OFFSET_GLOBO_UPS[1], 'UPS') 
             
@@ -2268,8 +2312,28 @@ def generar_diagrama_dxf(datos):
 
         # 8. Motor de Dibujo de Tablas Múltiples (Adaptado para Side-by-Side)
         def dibujar_tabla_multi(secciones_taps, titulo, y_start, offset_x=0, ancho_total=520):
-            t_size = 2.2 * factor_escala # Ligeramente más pequeño para que quepa perfecto en columnas divididas
-            h_ren = 5.5 * factor_escala
+            # --- NUEVO: CÁLCULO DE COMPRESIÓN DINÁMICA ---
+            total_lineas_sec = sum(max(len(secciones_taps[t][s_idx]["lineas"]) for t in range(max_taps)) for s_idx in range(len(secciones_taps[0])))
+            total_lineas = total_lineas_sec + 2 # Incluimos 2 líneas extra de encabezados
+            altura_base_requerida = total_lineas * 5.5
+            
+            # Calculamos cuánto espacio físico nos queda antes de chocar con el cajetín (Y=45)
+            y_limite_cajetin = insert_y + (45.0 * factor_escala)
+            espacio_disponible = (y_start - y_limite_cajetin) / factor_escala
+            
+            # Si estamos en el modo de 2 tablas apiladas verticalmente, la tabla 1 solo puede usar la mitad del espacio
+            if modo_calculo == "Multivoltaje 75°C" and "TABLA 1" in titulo:
+                espacio_disponible = espacio_disponible / 2.05 # Dejamos un pequeño margen entre tablas
+                
+            factor_compresion = 1.0
+            if altura_base_requerida > espacio_disponible and espacio_disponible > 0:
+                factor_compresion = espacio_disponible / altura_base_requerida
+
+            # Aplicamos la compresión al tamaño de texto y renglón
+            t_size = 2.2 * factor_escala * factor_compresion
+            h_ren = 5.5 * factor_escala * factor_compresion
+            # -----------------------------------------------
+            
             x_b = x_h2 + (COORD_X_INICIO_TABLA * factor_escala) + (offset_x * factor_escala)
             w_tot_h2 = ancho_total * factor_escala 
             w_c1_h2 = 18 * factor_escala # Columna PTO ligeramente más delgada
@@ -2305,7 +2369,9 @@ def generar_diagrama_dxf(datos):
             for i in range(max_taps + 1):
                 xl = x_b + w_c1_h2 + (i * w_col)
                 msp.add_line((xl, y_start), (xl, y_c))
-            return y_c - (12 * factor_escala)
+                
+            # Reducimos ligeramente el margen entre tablas apiladas considerando la compresión
+            return y_c - (8 * factor_escala * factor_compresion)
 
         # 9. Renderizado final de ambas tablas (Dinámico según el modo)
         y_inicial_tablas = insert_y + (385 * factor_escala)
@@ -2604,9 +2670,14 @@ with col3:
 
         bpe = st.toggle("Incluir Bypass (BPE)", disabled=(("Paralelo" in topologia and not paralelo_disabled) or es_filtro))
         
-        spv = st.toggle("Incluir SPV")
-        if spv: cap_spv = st.selectbox("Capacidad SPV:", ["50 kA", "100 kA", "200 kA", "400 kA", "530 kA"])
-        else: cap_spv = "N/A"
+        # Candado: Bloquear SPV si es sistema Paralelo SIN GABCONX
+        spv_disabled = True if ("Paralelo" in topologia and not gabconx) else False
+        spv = st.toggle("Incluir SPV", disabled=spv_disabled)
+        
+        if spv and not spv_disabled: 
+            cap_spv = st.selectbox("Capacidad SPV:", ["50 kA", "100 kA", "200 kA", "400 kA", "530 kA"])
+        else: 
+            cap_spv = "N/A"
 
 with col4:
     with st.container(border=True):
@@ -2767,18 +2838,37 @@ with st.container(border=True):
                     modelo_ui = f"UPS-IND-HF-13{int(kva_u_front):02d}{familia_str}"
 
                 if "Paralelo" in topologia and gabconx:
-                    filas_resumen.append({
-                        "tipo": "in", "titulo": f"🟢 Entrada de Red Principal (GABCONX){sufijo_trafo_in}",
-                        "eng": calcular_ingenieria_pura(kva_tot_front, v_gabconx_base, True, tipo_equipo, tipo_inst),
-                        "pr": "PR_GABCONX_IN", "cf": "CF_GABCONX_IN", "ct": "CT_GABCONX_IN", "hf": "HF_GABCONX_IN", "ht": "HT_GABCONX_IN",
-                        "lleva_breaker": True, "idx_tap": i_tap, "suf_llave": suf_llave
-                    })
+                    es_trafo_global = trafo_in and config_trafo_in == "Capacidad total del sistema"
+                    es_trafo_indiv = trafo_in and config_trafo_in == "Individual por UPS"
+                    
+                    if es_trafo_global:
+                        filas_resumen.append({
+                            "tipo": "in", "titulo": f"🟢 Entrada de Transformador Global (AT/TA)",
+                            "eng": calcular_ingenieria_pura(kva_tot_front, v_red_base, True, tipo_equipo, tipo_inst),
+                            "pr": "PR_TRAFO_IN", "cf": "CF_TRAFO_IN", "ct": "CT_TRAFO_IN", "hf": "HF_TRAFO_IN", "ht": "HT_TRAFO_IN",
+                            "lleva_breaker": True, "idx_tap": i_tap, "suf_llave": suf_llave
+                        })
+                    else:
+                        filas_resumen.append({
+                            "tipo": "in", "titulo": f"🟢 Entrada de Red Principal (GABCONX)",
+                            "eng": calcular_ingenieria_pura(kva_tot_front, v_gabconx_base, True, tipo_equipo, tipo_inst),
+                            "pr": "PR_GABCONX_IN", "cf": "CF_GABCONX_IN", "ct": "CT_GABCONX_IN", "hf": "HF_GABCONX_IN", "ht": "HT_GABCONX_IN",
+                            "lleva_breaker": True, "idx_tap": i_tap, "suf_llave": suf_llave
+                        })
+                        
+                    if es_trafo_indiv:
+                        filas_resumen.append({
+                            "tipo": "in", "titulo": f"🟢 Entrada de Transformador Individual (AT/TA)",
+                            "eng": calcular_ingenieria_pura(kva_u_front, v_gabconx_base, False, tipo_equipo, tipo_inst),
+                            "pr": "PR_TRAFO_IN", "cf": "CF_TRAFO_IN", "ct": "CT_TRAFO_IN", "hf": "HF_TRAFO_IN", "ht": "HT_TRAFO_IN",
+                            "lleva_breaker": False, "idx_tap": i_tap, "suf_llave": suf_llave
+                        })
 
                 sufijo_trafo_ups_in = sufijo_trafo_in if not ("Paralelo" in topologia and gabconx) else ""
                 lleva_brk_in = False if ("Paralelo" in topologia and gabconx) else True
                 filas_resumen.append({
                     "tipo": "in", "titulo": f"🟢 Entrada de {modelo_ui}{sufijo_trafo_ups_in}",
-                    "eng": calcular_ingenieria_pura(kva_u_front, v_in_base, True, tipo_equipo, tipo_inst),
+                    "eng": calcular_ingenieria_pura(kva_u_front, v_in_base, lleva_brk_in, tipo_equipo, tipo_inst),
                     "pr": "PR_UPS_IN", "cf": "CF_UPS_IN", "ct": "CT_UPS_IN", "hf": "HF_UPS_IN", "ht": "HT_UPS_IN",
                     "lleva_breaker": lleva_brk_in, "idx_tap": i_tap, "suf_llave": suf_llave
                 })
