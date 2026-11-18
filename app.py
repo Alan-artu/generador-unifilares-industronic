@@ -1958,10 +1958,10 @@ def generar_diagrama_dxf(datos):
             msp.add_blockref(bloque_principal, insert=(xi, y))
             if i == 0 and datos["GABCONX"] == "Sí":
                 if datos.get("Config Trafo In") == "Individual por UPS" and datos["Trafo Entrada"] != "Ninguno":
-                    # Lo bajamos al tramo exacto entre GABCONX y el Transformador
+                    # El globo 3 se queda igual, quedó perfecto
                     dibujar_globo(xi - 15.0, y + 85.0, 'ENTRADA_TRAFO') 
-                    # Lo bajamos al tramo exacto entre el Transformador y el UPS
-                    dibujar_globo(xi - 15.0, y + 12.0, 'ENTRADA_UPS') 
+                    # Bajamos el globo 4 para que se centre en el cable y no toque el trafo
+                    dibujar_globo(xi - 15.0, y - 2.0, 'ENTRADA_UPS') 
                 else:
                     dibujar_globo(xi + OFFSET_GLOBO_ENTRADA_UPS_PAR[0], y + OFFSET_GLOBO_ENTRADA_UPS_PAR[1], 'ENTRADA_UPS')
             dibujar_globo(xi + OFFSET_GLOBO_UPS[0], y + OFFSET_GLOBO_UPS[1], 'UPS') 
@@ -3139,3 +3139,4 @@ if generar:
 
     except Exception as e:
         st.error(f"Ocurrió un error al generar el plano. Detalle: {e}")
+
