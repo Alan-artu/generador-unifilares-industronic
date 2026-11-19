@@ -44,7 +44,7 @@ TABLA_TIERRA = [
     ("6 AWG", 200), ("4 AWG", 300), ("2 AWG", 500), 
     ("1/0 AWG", 800), ("2/0 AWG", 1000), ("3/0 AWG", 1200), 
     ("4/0 AWG", 1600), ("250 KCMIL", 2000), ("350 KCMIL", 2500), 
-    ("400 KCMIL", 3000), ("500 KCMIL", 9999)
+    ("400 KCMIL", 3000), ("500 KCMIL", 4000)
 ]
 VOLTAJES_ESTRELLA = ["110/190V", "115/200V", "120/208V", "127/220V", "139/240V", "220/380V", "230/400V", "254/440V", "265/460V", "266/460V", "277/480V"]
 VOLTAJES_DELTA = ["208D", "220D", "380D", "400D", "440D", "460D", "480D"]
@@ -1255,6 +1255,7 @@ def generar_diagrama_dxf(datos):
     registrar_bloque(doc, "chasis.dxf", "BLK_CHASIS")
     registrar_bloque(doc, "bpe_1.dxf", "BLK_BPE_1")
     registrar_bloque(doc, "bpe_amcr.dxf", "BLK_BPE_AMCR")
+    registrar_bloque(doc, "bpe_chasis.dxf", "BLK_BPE_CHASIS")
     registrar_bloque(doc, "banco_plomo_ext.dxf", "BLK_BANCO_PLOMO_EXT")
     registrar_bloque(doc, "banco_plomo_int.dxf", "BLK_BANCO_PLOMO_INT")
     registrar_bloque(doc, "banco_litio.dxf", "BLK_BANCO_LITIO")
@@ -1889,6 +1890,8 @@ def generar_diagrama_dxf(datos):
         dibujar_globo(x_c + OFFSET_GLOBO_ENTRADA_PRINCIPAL[0], y_globo_entrada, clave_entrada)
 
         y -= ESPACIO_BREAKER_PRINCIPAL
+        y_top_chasis_bpe = y  # Capturamos la altura exacta de la conexión superior del Bypass
+        
         # Condición para NO dibujar el trafo central si se eligió individual
         es_trafo_indiv_central = datos.get("Config Trafo In") == "Individual por UPS" and datos["Trafo Entrada"] != "Ninguno" and datos["GABCONX"] == "Sí"
         
@@ -1913,12 +1916,19 @@ def generar_diagrama_dxf(datos):
         y_nodo_top = y
 
     if num_ups == 1:
+        es_chasis_bpe = (datos["Bypass Externo"] == "Sí" and datos.get("Gabinete Doble Trafo", "Separados") == "Un Solo Gabinete")
+
         if datos["Bypass Externo"] == "Sí":
-            bpe_block = "BLK_BPE_AMCR" if datos["Tipo Equipo"] == "AMCR" else "BLK_BPE_1"
-            msp.add_blockref(bpe_block, insert=(x_c, y_nodo_top))
-            dibujar_globo(x_c + OFFSET_GLOBO_BPE[0], y_nodo_top + OFFSET_GLOBO_BPE[1], 'BPE') 
-            y_nodo_bot = y_nodo_top - ALTO_BPE
-            y -= SEPARACION_UPS_BPE
+            if es_chasis_bpe:
+                # No insertamos el BPE normal. Solo dibujamos el cable hacia el UPS.
+                msp.add_line((x_c, y), (x_c, y - SEPARACION_UPS_BPE))
+                y -= SEPARACION_UPS_BPE
+            else:
+                bpe_block = "BLK_BPE_AMCR" if datos["Tipo Equipo"] == "AMCR" else "BLK_BPE_1"
+                msp.add_blockref(bpe_block, insert=(x_c, y_nodo_top))
+                dibujar_globo(x_c + OFFSET_GLOBO_BPE[0], y_nodo_top + OFFSET_GLOBO_BPE[1], 'BPE') 
+                y_nodo_bot = y_nodo_top - ALTO_BPE
+                y -= SEPARACION_UPS_BPE
         else:
             y_nodo_bot = y_nodo_top - CABLE_SALIDA - ALTO_UPS - CABLE_SALIDA
             msp.add_line((x_c, y), (x_c, y - CABLE_SALIDA))
@@ -1936,8 +1946,14 @@ def generar_diagrama_dxf(datos):
         if datos["Filtro"] != "Ninguno":
             dibujar_globo(x_c + OFFSET_GLOBO_SALIDA_UPS[0], y + OFFSET_GLOBO_SALIDA_UPS[1], 'SALIDA_UPS') 
             
-        if datos["Bypass Externo"] == "No": msp.add_line((x_c, y), (x_c, y_nodo_bot))
-        y = y_nodo_bot
+        if datos["Bypass Externo"] == "No": 
+            msp.add_line((x_c, y), (x_c, y_nodo_bot))
+            y = y_nodo_bot
+        elif es_chasis_bpe:
+            msp.add_line((x_c, y), (x_c, y - CABLE_SALIDA))
+            y -= CABLE_SALIDA
+        else:
+            y = y_nodo_bot
     else:
         if not es_sin_gabconx:
             # Inyección del nuevo bloque TODO EN UNO
@@ -2000,6 +2016,13 @@ def generar_diagrama_dxf(datos):
         coord_x_chasis = x_c + OFFSET_X_CHASIS 
         coord_y_chasis = y + OFFSET_Y_CHASIS 
         msp.add_blockref("BLK_CHASIS", insert=(coord_x_chasis, coord_y_chasis))
+        
+        if datos["Bypass Externo"] == "Sí":
+            msp.add_blockref("BLK_BPE_CHASIS", insert=(x_c, y))
+            # Posicionamos el globo en el centro vertical del Bypass. 
+            # -160 es el offset en X. Si el globo no queda centrado en tu cuadro, ajusta este número.
+            y_medio_bpe = (y_top_chasis_bpe + y) / 2
+            dibujar_globo(x_c - 160, y_medio_bpe, 'BPE')
 
     if datos["Filtro"] in ["FAP", "FAPA"]:
         bloque_filtro = "BLK_FAP" if datos["Filtro"] == "FAP" else "BLK_FAPA"
