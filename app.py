@@ -165,7 +165,7 @@ def obtener_familia_voltajes(voltaje_str):
 def calcular_ingenieria_pura(kva_total, voltaje_str, es_entrada=False, tipo_eq="UPS", tipo_instalacion="Defecto"):
     v_ll = float(voltaje_str.split("/")[-1].replace("D", "").replace("V", "").strip())
     corriente = (kva_total * 1000) / (math.sqrt(3) * v_ll)
-    
+        
     if es_entrada and tipo_eq == "UPS": corriente *= 1.25
     proteccion = math.ceil(corriente / 10) * 10
 
@@ -173,6 +173,7 @@ def calcular_ingenieria_pura(kva_total, voltaje_str, es_entrada=False, tipo_eq="
     max_amp = tabla_fase[-1][1]
 
     num_conductores = math.ceil(proteccion / max_amp) if proteccion >= max_amp else 1
+    if (max_amp * num_conductores) <= proteccion: num_conductores += 1
     proteccion_fase_por_hilo = proteccion / num_conductores
 
     calibre_fase = tabla_fase[-1][0]
@@ -180,9 +181,10 @@ def calcular_ingenieria_pura(kva_total, voltaje_str, es_entrada=False, tipo_eq="
         if amp > proteccion_fase_por_hilo: 
             calibre_fase = awg
             break
-            
-    num_conductores_tierra = math.ceil(proteccion / 4000) if proteccion > 4000 else 1
-    proteccion_tierra_por_hilo = proteccion / num_conductores_tierra
+                
+        num_conductores_tierra = math.ceil(proteccion / 4000) if proteccion > 4000 else 1
+        if (4000 * num_conductores_tierra) <= proteccion: num_conductores_tierra += 1
+        proteccion_tierra_por_hilo = proteccion / num_conductores_tierra
 
     calibre_tierra = "500 KCMIL"
     for awg, amp in TABLA_TIERRA:
@@ -204,24 +206,34 @@ def calcular_ingenieria_filtros(capacidad_str, voltaje_str, tipo_eq, tipo_instal
     tabla_fase = TABLA_FASE_CHAROLA_75 if tipo_instalacion == "Charola" else (TABLA_FASE_LIBRE_75 if tipo_instalacion == "Libre" else TABLA_FASE_NEUTRO)
     max_amp = tabla_fase[-1][1]
 
-    num_conductores_fase = math.ceil(corriente_fase / max_amp) if corriente_fase >= max_amp else 1
+    # --- Lógica estricta de Fase ---
+    num_conductores_fase = math.ceil(proteccion / max_amp) if proteccion >= max_amp else 1
+    if (max_amp * num_conductores_fase) <= proteccion: num_conductores_fase += 1
     amp_por_hilo_fase = proteccion / num_conductores_fase
+    
     calibre_fase = tabla_fase[-1][0]
     for awg, amp in tabla_fase:
         if amp > amp_por_hilo_fase: 
             calibre_fase = awg
             break
 
-    num_conductores_neutro = math.ceil(corriente_neutro / max_amp) if corriente_neutro >= max_amp else 1
-    amp_por_hilo_neutro = (proteccion * 2) / num_conductores_neutro if tipo_eq == "FAA" else amp_por_hilo_fase
+    # --- Lógica estricta de Neutro ---
+    prot_req_neutro = proteccion * 2 if tipo_eq == "FAA" else proteccion
+    num_conductores_neutro = math.ceil(prot_req_neutro / max_amp) if prot_req_neutro >= max_amp else 1
+    if (max_amp * num_conductores_neutro) <= prot_req_neutro: num_conductores_neutro += 1
+    amp_por_hilo_neutro = prot_req_neutro / num_conductores_neutro
+    
     calibre_neutro = tabla_fase[-1][0]
     for awg, amp in tabla_fase:
         if amp > amp_por_hilo_neutro: 
             calibre_neutro = awg
             break
 
+    # --- Lógica estricta de Tierra ---
     num_conductores_tierra = math.ceil(proteccion / 4000) if proteccion > 4000 else 1
+    if (4000 * num_conductores_tierra) <= proteccion: num_conductores_tierra += 1
     amp_por_hilo_tierra = proteccion / num_conductores_tierra
+    
     calibre_tierra = "500 KCMIL"
     for awg, amp in TABLA_TIERRA:
         if amp > amp_por_hilo_tierra: 
@@ -234,21 +246,23 @@ def calcular_ingenieria_trafo_puro(kva_total, voltaje_str, tipo_instalacion="Def
     v_ll = float(voltaje_str.split("/")[-1].replace("D", "").replace("V", "").strip())
     corriente = (kva_total * 1000) / (math.sqrt(3) * v_ll)
     proteccion = math.ceil(corriente / 10) * 10
-    
+        
     tabla_fase = TABLA_FASE_CHAROLA_75 if tipo_instalacion == "Charola" else (TABLA_FASE_LIBRE_75 if tipo_instalacion == "Libre" else TABLA_FASE_NEUTRO)
     max_amp = tabla_fase[-1][1]
 
-    num_conductores = math.ceil(corriente / max_amp) if corriente >= max_amp else 1
+    num_conductores = math.ceil(proteccion / max_amp) if proteccion >= max_amp else 1
+    if (max_amp * num_conductores) <= proteccion: num_conductores += 1
     amp_por_hilo = proteccion / num_conductores
-    
+        
     calibre_fase = tabla_fase[-1][0]
     for awg, amp in tabla_fase:
         if amp > amp_por_hilo: 
             calibre_fase = awg
             break
-            
-    num_tierra = math.ceil(proteccion / 4000) if proteccion > 4000 else 1
-    amp_tierra = proteccion / num_tierra
+                
+        num_tierra = math.ceil(proteccion / 4000) if proteccion > 4000 else 1
+        if (4000 * num_tierra) <= proteccion: num_tierra += 1
+        amp_tierra = proteccion / num_tierra
     
     calibre_tierra = "500 KCMIL"
     for awg, amp in TABLA_TIERRA:
